@@ -1,0 +1,75 @@
+; Copyright 2024 Lukasz Janyst <lukasz@jany.st>
+; Licensed under the MIT license, see the LICENSE file for details.
+
+; We talk go the ENC28j50 chip over SPI at 20MHz at most. The MISO is sampled at
+; the rising edge of the clock, while MOSI is clocked out at the falling edge.
+; The commands are initiated by pulling Slave Select down and terinated by
+; pulling it up.
+;
+; We extend each command such that the first byte is the size of the TX payload
+; in bits, while the second is the size of the RX payload to be clocked in from
+; the slave. There's always at least one TX byte - the command header - as
+; described in chapter 4.2 of the manual. Register write commands have one byte
+; of payload to transmit, while the memory write can transmit up to 31. This is
+; a limitation caused by the fact that PIO cannot pull more than 1 byte at a
+; time from the TX FIFO for this config, and cannot post process that byte.
+; Register read commands don't transmit any payload and receive 1 byte for the
+; ETH reads and 2 bytes for MAC and MII reads, first of which is garbage. Memory
+; reads can receive up to 32 bytes of payload. Again, it's a limitation of PIO
+; and not the slave. This still results in a decently efficient DMA.
+; 
+; We run this program at 6 times the speed supported by the slave so that we
+; have the cycles for the extra control logic not related to manipulating the
+; output pins. Appropriate waits are introduced manually to achieve a stable
+; clock.
+
+.program enc28j60_spi
+.side_set 2 opt
+
+  ; pull the size of the tx payload to x and the rx payload to y
+  out x, 8
+  out y, 8
+
+  ; pull the command from the tx fifo and lower the slave select
+  ; auto pull tends to stall after outing 8 bits at a time twice
+  pull block side 0
+
+  ; transmit the command header and the payload
+loop_tx:
+  jmp !x end_tx
+
+  ; out a data bit before the clock edge
+  out pins, 1 [2]
+
+  ; rise the clock for 6 clock cycles, two nops due to the instruction size
+  ; constraints
+  nop side 1 [3]
+  nop [1]
+
+  ; lower the clock
+  nop side 0
+  jmp x-- loop_tx
+end_tx:
+
+  ; wait 3 cycles, so that we don't jitter the clock signal
+  nop [2]
+
+  ; clock in the slave's response
+loop_rx:
+  jmp !y end_rx
+
+  ; sample a data bit as we rise the clock becaus it's been clocked out at
+  ; previous the falling edge
+  in pins, 1 side 1 [3]
+
+  ; because the above delay should have been 5 but we can't encode it due to the
+  ; instruction size constraints
+  nop [1]
+
+  ; lower the clock
+  nop side 0 [3]
+  jmp y-- loop_rx
+end_rx:
+
+; done transmitting and receiving; rise slave select to terminate the command
+set pins 0 side 0x2
