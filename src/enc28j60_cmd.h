@@ -62,28 +62,52 @@
 // Register addresses
 // Chapter 3.1 of the manual
 // Bank 0
+
+// Buffer read pointer
 #define ERDPTL 0x00
 #define ERDPTH 0x01
+
+// Buffer write pointer
 #define EWRPTL 0x02
 #define EWRPTH 0x03
+
+// Start of the packet to be transmitted
 #define ETXSTL 0x04
 #define ETXSTH 0x05
+
+// End of the packet to be transmitted
 #define ETXNDL 0x06
 #define ETXNDH 0x07
+
+// Start of the receive buffer
 #define ERXSTL 0x08
 #define ERXSTH 0x09
+
+// End of the receive buffer
 #define ERXNDL 0x0a
 #define ERXNDH 0x0b
+
+// Receive read pointer - position within the RX fifo where the recevie HW is
+// forbidden to write to. The recevie hardware will up to but not intluding the
+// memory pointed to by this reg. If the FIFO fills up, the new data will be
+// discarded. The controller must advance this pointer to receive new data.
 #define ERXRDPTL 0x0c
 #define ERXRDPTH 0x0d
+
+// Receive write pointer - position within the RX buffer where HW will write
+// the incoming bytes
 #define ERXWRPTL 0x0e
 #define ERXWRPTH 0x0f
+
 #define EDMASTL 0x10
 #define EDMASTH 0x11
+
 #define EDMANDL 0x12
 #define EDMANDH 0x13
+
 #define EDMADSTL 0x14
 #define EDMADSTH 0x15
+
 #define EDMACSL 0x16
 #define EDMACSH 0x17
 
@@ -154,32 +178,86 @@
 #define ECON2 0x1e
 #define ECON1 0x1f
 
+// MAC filters
+// Unicast
+#define UCEN 0x80
+// CRC
+#define CRCEN 0x20
+
+// Multicast
+#define MCEN 0x2
+
+// Broadcast
+#define BCEN 0x1
+
+// csat
+#define CLKRDY 0x1
+
+// MACON1: MAC Receive Enable
+#define MARXEN 0x1
+
+// MACON3: PADCFG and TXCRCEN
+#define PADCRC 0xf0
+
+// MACON4: DEFER
+#define DEFER 0x40
+
+// MICMD: MIIRD
+#define MIIRD 0x1
+
+// MISTAT: BUSY
+#define BUSY 0x1
+
+// PHY registers
+#define PHCON1 0x0
+#define PHSTAT1 0x1
+#define PHID1 0x3
+#define PHID2 0x3
+#define PHCON2 0x10
+#define PHSTAT2 0x11
+#define PHIE 0x12
+#define PHIR 0x13
+#define PHLCON 0x14
+
+// PHYCON2: PHY Half-Duplex Loopback Disable
+#define HDLDIS 0x0100
+
 //! Execute the command
 //!
 //! @param dst memory for the result of the RCR and RBM commands, not used
 //!            otherwise
 //! @param src source buffer for the WBM command, not used otherwise
-void enc28j60_execute_blocking(enc28j60 *eth, uint32_t cmd, uint8_t *dst,
-                               uint8_t *src);
+void enc28j60_execute_blocking(enc28j60 *eth, uint32_t cmd, void *dst,
+                               const void *src);
+
+//! Write a register
+static inline void reg_bits_clear_blk(enc28j60 *eth, uint8_t addr, uint8_t data)
+{
+    uint32_t cmd = BFC_CMD(addr, data);
+    enc28j60_execute_blocking(eth, cmd, NULL, NULL);
+}
+
+//! Write a register
+static inline void reg_bits_set_blk(enc28j60 *eth, uint8_t addr, uint8_t data)
+{
+    uint32_t cmd = BFS_CMD(addr, data);
+    enc28j60_execute_blocking(eth, cmd, NULL, NULL);
+}
 
 //! Set the active register bank
 static inline void bank_set_blk(enc28j60 *eth, uint8_t bank)
 {
     // Section 3.1 of the manual
     // Clearing BSEL1:BSEL0 in ECON1
-    bank &= 0x3;
-    uint32_t cmd = BFC_CMD(ECON1, bank);
-    enc28j60_execute_blocking(eth, cmd, NULL, NULL);
-    // Setting the above to the desired value
-    cmd = BFS_CMD(ECON1, bank);
-    enc28j60_execute_blocking(eth, cmd, NULL, NULL);
+    reg_bits_clear_blk(eth, ECON1, 0x3);
+    reg_bits_set_blk(eth, ECON1, bank & 0x3);
 }
 
 //! Read an ETH register
 static inline uint8_t reg_read_e_blk(enc28j60 *eth, uint8_t addr)
 {
     uint32_t result = 0;
-    uint32_t cmd = RCR_E_CMD(EREVID);
+    uint32_t cmd = RCR_E_CMD(addr);
     enc28j60_execute_blocking(eth, cmd, (uint8_t *)&result, NULL);
     return result;
 }
@@ -190,7 +268,76 @@ static inline uint8_t reg_read_m_blk(enc28j60 *eth, uint8_t addr)
     // According to the section 4.2.1 of the manual the first received byte
     // for these reads is a dummy.
     uint32_t result = 0;
-    uint32_t cmd = RCR_M_CMD(EREVID);
+    uint32_t cmd = RCR_M_CMD(addr);
     enc28j60_execute_blocking(eth, cmd, (uint8_t *)&result, NULL);
     return result >> 8;
+}
+
+//! Write a register
+static inline void reg_write_blk(enc28j60 *eth, uint8_t addr, uint8_t data)
+{
+    uint32_t cmd = WCR_CMD(addr, data);
+    enc28j60_execute_blocking(eth, cmd, NULL, NULL);
+}
+
+//! Read a PHY register; changes the selected bank
+static inline uint16_t reg_read_p_blk(enc28j60 *eth, uint8_t addr)
+{
+    // Initiate the readout operation
+    bank_set_blk(eth, 2);
+    reg_write_blk(eth, MIREGADR, addr);
+    reg_write_blk(eth, MICMD, MIIRD);
+
+    // Wait for MAC to fetch the values from the PHY
+    bank_set_blk(eth, 3);
+    while (reg_read_m_blk(eth, MISTAT) & BUSY)
+        ;
+
+    // Clear the command and read out the data
+    bank_set_blk(eth, 2);
+    reg_write_blk(eth, MICMD, 0);
+
+    uint16_t result = reg_read_m_blk(eth, MIRDH);
+    result <<= 8;
+    result |= reg_read_m_blk(eth, MIRDL);
+    return result;
+}
+
+//! Write a PHY register; changes the selected bank
+static inline void reg_write_p_blk(enc28j60 *eth, uint8_t addr, uint16_t data)
+{
+    // Initiate the readout operation
+    bank_set_blk(eth, 2);
+    reg_write_blk(eth, MIREGADR, addr);
+
+    // Writing the higher byte automatically triggers the transaction
+    reg_write_blk(eth, MIWRL, data);
+    reg_write_blk(eth, MIWRH, data >> 8);
+
+    // Wait for MAC to write the values to the PHY
+    bank_set_blk(eth, 3);
+    while (reg_read_m_blk(eth, MISTAT) & BUSY)
+        ;
+}
+
+//! Write memory; changes the selected bank
+static inline void mem_write_blk(enc28j60 *eth, uint16_t addr, uint8_t size,
+                                 const void *data)
+{
+    bank_set_blk(eth, 0);
+    reg_write_blk(eth, EWRPTL, addr);
+    reg_write_blk(eth, EWRPTH, addr >> 8);
+    uint32_t cmd = WBM_CMD(size);
+    enc28j60_execute_blocking(eth, cmd, NULL, data);
+}
+
+//! Write memory; changes the selected bank
+static inline void mem_read_blk(enc28j60 *eth, uint16_t addr, uint8_t size,
+                                void *data)
+{
+    bank_set_blk(eth, 0);
+    reg_write_blk(eth, ERDPTL, addr);
+    reg_write_blk(eth, ERDPTH, addr >> 8);
+    uint32_t cmd = RBM_CMD(size);
+    enc28j60_execute_blocking(eth, cmd, data, NULL);
 }

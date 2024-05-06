@@ -5,8 +5,8 @@
 
 // Don't keep this function in flash
 void __time_critical_func(enc28j60_execute_blocking)(enc28j60 *eth,
-                                                     uint32_t cmd, uint8_t *dst,
-                                                     uint8_t *src)
+                                                     uint32_t cmd, void *dst,
+                                                     const void *src)
 {
     io_rw_8 *txfifo = (io_rw_8 *)&eth->cfg->pio->txf[eth->cfg->sm];
     io_rw_8 *rxfifo = (io_rw_8 *)&eth->cfg->pio->rxf[eth->cfg->sm];
@@ -18,7 +18,8 @@ void __time_critical_func(enc28j60_execute_blocking)(enc28j60 *eth,
     size_t tx_remain = 2 + tx_sz;
     size_t rx_remain = rx_sz;
     uint8_t data[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
-    uint8_t *snd = data;
+    const uint8_t *snd = data;
+    uint8_t *rcv = dst;
 
     // For WBM, we first transmit the command header and then the data payload
     // from the source buffer skipping the data payload byte from the command
@@ -30,7 +31,7 @@ void __time_critical_func(enc28j60_execute_blocking)(enc28j60 *eth,
                 ++i;
             }
         }
-        tx_remain = tx_sz;
+        tx_remain = tx_sz - 1;
         snd = src;
     }
 
@@ -44,7 +45,7 @@ void __time_critical_func(enc28j60_execute_blocking)(enc28j60 *eth,
         }
         if (rx_remain &&
             !pio_sm_is_rx_fifo_empty(eth->cfg->pio, eth->cfg->sm)) {
-            *dst++ = *rxfifo;
+            *rcv++ = *rxfifo;
             --rx_remain;
         }
     }
