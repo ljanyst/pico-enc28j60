@@ -17,7 +17,7 @@
 ; ETH reads and 2 bytes for MAC and MII reads, first of which is garbage. Memory
 ; reads can receive up to 32 bytes of payload. Again, it's a limitation of PIO
 ; and not the slave. This still results in a decently efficient DMA.
-; 
+;
 ; We run this program at 6 times the speed supported by the slave so that we
 ; have the cycles for the extra control logic not related to manipulating the
 ; output pins. Appropriate waits are introduced manually to achieve a stable
@@ -51,8 +51,9 @@ loop_tx:
   jmp x-- loop_tx
 end_tx:
 
-  ; wait 3 cycles, so that we don't jitter the clock signal
-  nop [2]
+  ; wait 3 cycles, so that we don't jitter the clock signal, lower the MOSI
+  nop
+  set pins 0 [1]
 
   ; clock in the slave's response
 loop_rx:
@@ -72,4 +73,4 @@ loop_rx:
 end_rx:
 
 ; done transmitting and receiving; rise slave select to terminate the command
-set pins 0 side 0x2
+set pins 0 side 0x2 [3]
