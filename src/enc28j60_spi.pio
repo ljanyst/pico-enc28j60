@@ -1,8 +1,6 @@
 ; Copyright 2024 Lukasz Janyst <lukasz@jany.st>
 ; Licensed under the MIT license, see the LICENSE file for details.
 
-; It seems we can talk to the ENC28J50 chip over SPI reliably at at most
-; 4 MHz. Anything faster and access to the MAC and PHY regs is unreliable.
 ; The MOSI signal is sampled at the rising edge of the clock, while MISO is
 ; clocked out at the falling edge. The commands are initiated by pulling Slave
 ; Select down and terinated by pulling it up.
