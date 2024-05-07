@@ -24,6 +24,7 @@ enc28j60_config *enc28j60_get_default_config()
     cfg->miso_pin = 16;
     cfg->mosi_pin = 17;
     cfg->sclk_pin = 18;
+    cfg->irq_pin = 20;
 
     // Use half of the buffer as a receive FIFO
     cfg->rx_size = 0x1000;
@@ -43,6 +44,7 @@ enc28j60_config *enc28j60_get_default_config()
     cfg->mac_addr[4] = 0x72;
     cfg->mac_addr[5] = 0x0a;
 
+    cfg->irq_cb = NULL;
     return cfg;
 }
 
@@ -83,7 +85,11 @@ static void initialize_io(enc28j60_config *cfg)
     pio_sm_init(cfg->pio, cfg->sm, offset, &c);
     pio_sm_set_enabled(cfg->pio, cfg->sm, true);
 
-    // Initialize the interrupt
+    // Initialize the GPIO interrupt
+    if (cfg->irq_cb) {
+        gpio_set_irq_enabled_with_callback(cfg->irq_pin, GPIO_IRQ_EDGE_FALL,
+                                           true, cfg->irq_cb);
+    }
 }
 
 static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
@@ -165,16 +171,12 @@ static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
     // Disable the half-duplex loopback
     reg_write_p_blk(eth, PHCON2, HDLDIS);
 
-    // Continually scan and fetch the link status from PHY to MAC so that we
-    // can read it directly without delay if we get a related interrupt
-    bank_set_blk(eth, 2);
-    reg_write_blk(eth, MIREGADR, PHSTAT2);
-    reg_write_blk(eth, MICMD, MIISCAN);
-
-    // Wait for the first scan to complete
-    bank_set_blk(eth, 3);
-    while (reg_read_m_blk(eth, MISTAT) & NVALID)
-        ;
+    // Set up the interrupt: zero all flags, set enables
+    if (cfg->irq_cb) {
+        reg_write_p_blk(eth, PHIE, PGEIE | PLNKIE);
+        reg_write_blk(eth, EIR, 0);
+        reg_write_blk(eth, EIE, INTIE | PKTIE | LINKIE | TXIE);
+    }
 }
 
 enc28j60 *enc28j60_init(enc28j60_config *cfg)
@@ -201,13 +203,48 @@ uint8_t enc28j60_revision(enc28j60 *eth)
     return reg_read_e_blk(eth, EREVID);
 }
 
-uint16_t enc28j60_link_status(enc28j60 *eth)
+bool enc28j60_link_status(enc28j60 *eth)
 {
-    bank_set_blk(eth, 2);
-    uint8_t result = reg_read_m_blk(eth, MIRDH);
-    return (result & LSTAT) ? 1 : 0;
+    uint16_t phstat2 = reg_read_p_blk(eth, PHSTAT2);
+    return (phstat2 & LSTAT) ? 1 : 0;
 }
 
 void enc28j60_deinit(enc28j60 *eth)
 {
+}
+
+uint8_t enc28j60_irq_flags(enc28j60 *eth)
+{
+    // According to the section 12 of the manual
+    reg_bits_clear_blk(eth, EIE, INTIE);
+    uint8_t flags = reg_read_e_blk(eth, EIR);
+    return flags;
+}
+
+void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags)
+{
+    // If the interrupt was a link interrupt, clear the PGIF flag by readinb
+    // PHIR; section 12.1.5 of the manual
+    if (flags & LINKIF) {
+        reg_read_p_blk(eth, PHIR);
+    }
+
+    // Accordint to the section 12 of the manual
+    reg_bits_clear_blk(eth, EIR, flags);
+    reg_bits_set_blk(eth, EIE, INTIE);
+}
+
+bool enc28j60_irq_is_link(uint8_t flags)
+{
+    return flags & LINKIF;
+}
+
+bool enc28j60_irq_tx(uint8_t flags)
+{
+    return flags & TXIF;
+}
+
+bool enc28j60_irq_rx(uint8_t flags)
+{
+    return flags & PKTIF;
 }

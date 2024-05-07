@@ -194,6 +194,27 @@
 // ESTAT: Clock ready
 #define CLKRDY 0x1
 
+// EIE: Global interrupt enable
+#define INTIE 0x80
+
+// EIE: Receive packet pending enable
+#define PKTIE 0x40
+
+// EIE: Link status change enable
+#define LINKIE 0x10
+
+// EIE: Transmit enable
+#define TXIE 0x8
+
+// EIR: Receive packet pending flag
+#define PKTIF 0x40
+
+// EIR: Link status change flag
+#define LINKIF 0x10
+
+// EIR: Transmit flag
+#define TXIF 0x8
+
 // MACON1: MAC Receive Enable
 #define MARXEN 0x1
 
@@ -230,7 +251,11 @@
 #define HDLDIS 0x0100
 
 // PHSTAT2: Link status; 1 link is up; 0 link is down
-#define LSTAT 0x4
+#define LSTAT 0x400
+
+// PHIE: Link up/down interrupt
+#define PGEIE 0x2
+#define PLNKIE 0x10
 
 //! Execute the command
 //!

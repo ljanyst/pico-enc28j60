@@ -12,6 +12,7 @@ typedef struct {
     uint miso_pin;
     uint mosi_pin;
     uint sclk_pin; //!< pin sclk_pin + 1 will be used as slave select
+    uint irq_pin;
 
     //! Size of the  recevie buffer in bytes; the device has 8kB RAM for
     //! buffers; what is not a receive buffer will be used as a transmit
@@ -20,6 +21,7 @@ typedef struct {
     uint16_t rx_size;
 
     uint8_t mac_addr[6];
+    void (*irq_cb)();
 } enc28j60_config;
 
 typedef struct {
@@ -39,4 +41,19 @@ void enc28j60_deinit(enc28j60 *eth);
 uint8_t enc28j60_revision(enc28j60 *eth);
 
 //! Get link status
-uint16_t enc28j60_link_status(enc28j60 *eth);
+bool enc28j60_link_status(enc28j60 *eth);
+
+//! Disable the interrupt and get the interrupt flags
+uint8_t enc28j60_irq_flags(enc28j60 *eth);
+
+//! Acknowledge and enable the interrupt
+void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags);
+
+//! Check if the interrupt is the link interrput
+bool enc28j60_irq_is_link(uint8_t flags);
+
+//! Check if the interrupt is the transmit interrupt
+bool enc28j60_irq_tx(uint8_t flags);
+
+//! Check if the interrupt is the receive interrupt
+bool enc28j60_irq_rx(uint8_t flags);
