@@ -351,3 +351,10 @@ static inline void mem_read_blk(enc28j60 *eth, uint16_t addr, uint8_t size,
     uint32_t cmd = RBM_CMD(size);
     enc28j60_execute_blocking(eth, cmd, data, NULL);
 }
+
+//! Reset the device
+static inline void system_reset(enc28j60 *eth)
+{
+    uint32_t cmd = SRC_CMD();
+    enc28j60_execute_blocking(eth, cmd, NULL, NULL);
+}

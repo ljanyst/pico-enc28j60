@@ -61,7 +61,7 @@ static void initialize_io(enc28j60_config *cfg)
     // The device seems to work reliably at 4 MHz clock or lower otherwise
     // MAC and MII accesses are unreliable. We scale the PIO clock to 40 MHz
     // becaue we take 10 PIO cycles for each SPI cycle in the PIO program.
-    float div = (float)clock_get_hz(clk_sys)/40000000;
+    float div = (float)clock_get_hz(clk_sys) / 40000000;
     sm_config_set_clkdiv(&c, div);
 
     // Slave select to high, clock, and mosi to low
@@ -86,6 +86,9 @@ static void initialize_io(enc28j60_config *cfg)
 
 static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
 {
+    // Reset, just in case we power cycled the controller, but not the device
+    system_reset(eth);
+
     // Set up the receving FIFO, section 6.1 of the manual
     bank_set_blk(eth, 0);
 
@@ -154,9 +157,11 @@ static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
     reg_write_blk(eth, MAADR5, cfg->mac_addr[4]);
     reg_write_blk(eth, MAADR6, cfg->mac_addr[5]);
 
+    // Disable the half-duplex loopback
     reg_write_p_blk(eth, PHCON2, HDLDIS);
 
-    // Continually scan and fetch the link status from PHY to MAC
+    // Continually scan and fetch the link status from PHY to MAC so that we
+    // can read it directly without delay if we get a related interrupt
     bank_set_blk(eth, 2);
     reg_write_blk(eth, MIREGADR, PHSTAT2);
     reg_write_blk(eth, MICMD, MIISCAN);
