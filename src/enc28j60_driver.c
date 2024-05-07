@@ -8,9 +8,7 @@
 #include <hardware/clocks.h>
 #include <hardware/gpio.h>
 
-#include <pico/stdlib.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 enc28j60_config *enc28j60_get_default_config()
