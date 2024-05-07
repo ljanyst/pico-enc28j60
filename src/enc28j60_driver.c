@@ -7,6 +7,7 @@
 
 #include <hardware/clocks.h>
 #include <hardware/gpio.h>
+#include <pico/stdlib.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -86,8 +87,11 @@ static void initialize_io(enc28j60_config *cfg)
 
 static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
 {
-    // Reset, just in case we power cycled the controller, but not the device
+    // Reset, just in case we power cycled the controller, but not the device.
+    // We need to wait 1ms to make sure the PHY clock is ready after a soft
+    // reset, as per errata.
     system_reset(eth);
+    sleep_ms(1);
 
     // Set up the receving FIFO, section 6.1 of the manual
     bank_set_blk(eth, 0);
