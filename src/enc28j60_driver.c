@@ -155,6 +155,16 @@ static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
     reg_write_blk(eth, MAADR6, cfg->mac_addr[5]);
 
     reg_write_p_blk(eth, PHCON2, HDLDIS);
+
+    // Continually scan and fetch the link status from PHY to MAC
+    bank_set_blk(eth, 2);
+    reg_write_blk(eth, MIREGADR, PHSTAT2);
+    reg_write_blk(eth, MICMD, MIISCAN);
+
+    // Wait for the first scan to complete
+    bank_set_blk(eth, 3);
+    while (reg_read_m_blk(eth, MISTAT) & NVALID)
+        ;
 }
 
 enc28j60 *enc28j60_init(enc28j60_config *cfg)
@@ -179,6 +189,13 @@ uint8_t enc28j60_revision(enc28j60 *eth)
 {
     bank_set_blk(eth, 3);
     return reg_read_e_blk(eth, EREVID);
+}
+
+uint16_t enc28j60_link_status(enc28j60 *eth)
+{
+    bank_set_blk(eth, 2);
+    uint8_t result = reg_read_m_blk(eth, MIRDH);
+    return (result & LSTAT) ? 1 : 0;
 }
 
 void enc28j60_deinit(enc28j60 *eth)

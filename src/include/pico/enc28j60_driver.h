@@ -37,3 +37,6 @@ void enc28j60_deinit(enc28j60 *eth);
 
 //! Get the revision id of the hardware
 uint8_t enc28j60_revision(enc28j60 *eth);
+
+//! Get link status
+uint16_t enc28j60_link_status(enc28j60 *eth);

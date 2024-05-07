@@ -179,18 +179,19 @@
 #define ECON1 0x1f
 
 // MAC filters
-// Unicast
+// ERXFCON: Unicast
 #define UCEN 0x80
-// CRC
+
+// ERXFCON: CRC
 #define CRCEN 0x20
 
-// Multicast
+// ERXFCON: Multicast
 #define MCEN 0x2
 
-// Broadcast
+// ERXFCON: Broadcast
 #define BCEN 0x1
 
-// csat
+// ESTAT: Clock ready
 #define CLKRDY 0x1
 
 // MACON1: MAC Receive Enable
@@ -202,11 +203,17 @@
 // MACON4: DEFER
 #define DEFER 0x40
 
-// MICMD: MIIRD
+// MICMD: PHY reg read command
 #define MIIRD 0x1
 
-// MISTAT: BUSY
+// MICMD: PHY reg scan command
+#define MIISCAN 0x2
+
+// MISTAT: Busy
 #define BUSY 0x1
+
+// MISTAT: Not valid
+#define NVALID 0x4
 
 // PHY registers
 #define PHCON1 0x0
@@ -221,6 +228,9 @@
 
 // PHYCON2: PHY Half-Duplex Loopback Disable
 #define HDLDIS 0x0100
+
+// PHSTAT2: Link status; 1 link is up; 0 link is down
+#define LSTAT 0x4
 
 //! Execute the command
 //!
