@@ -1,27 +1,36 @@
 ; Copyright 2024 Lukasz Janyst <lukasz@jany.st>
 ; Licensed under the MIT license, see the LICENSE file for details.
 
-; We talk go the ENC28j50 chip over SPI at 20MHz at most. The MISO is sampled at
-; the rising edge of the clock, while MOSI is clocked out at the falling edge.
-; The commands are initiated by pulling Slave Select down and terinated by
-; pulling it up.
+; It seems we can talk to the ENC28J50 chip over SPI reliably at at most
+; 4 MHz. Anything faster and access to the MAC and PHY regs is unreliable.
+; The MOSI signal is sampled at the rising edge of the clock, while MISO is
+; clocked out at the falling edge. The commands are initiated by pulling Slave
+; Select down and terinated by pulling it up.
 ;
 ; We extend each command such that the first byte is the size of the TX payload
 ; in bits, while the second is the size of the RX payload to be clocked in from
-; the slave. There's always at least one TX byte - the command header - as
-; described in chapter 4.2 of the manual. Register write commands have one byte
-; of payload to transmit, while the memory write can transmit up to 31. This is
-; a limitation caused by the fact that PIO cannot pull more than 1 byte at a
-; time from the TX FIFO for this config, and cannot post process that byte.
-; Register read commands don't transmit any payload and receive 1 byte for the
-; ETH reads and 2 bytes for MAC and MII reads, first of which is garbage. Memory
-; reads can receive up to 32 bytes of payload. Again, it's a limitation of PIO
-; and not the slave. This still results in a decently efficient DMA.
+; the slave. We use this extra information to time the termination of each
+; command and do not actually transmit it. This approach enables efficient DMA
+; without us having to care to manually manipulate the slave select pins. It
+; would have been more officient to specify these sizes in bytes or even use two
+; bytes for each size field, but I haven't found a way for PIO to do that
+; without complicating the encoding of the payload.
 ;
-; We run this program at 6 times the speed supported by the slave so that we
-; have the cycles for the extra control logic not related to manipulating the
-; output pins. Appropriate waits are introduced manually to achieve a stable
-; clock.
+; There's always at least one TX byte - the command header - as described in
+; chapter 4.2 of the manual.  Register write commands have one byte of payload
+; to transmit, while the memory write can transmit up to 31. This is a
+; limitation caused by the fact that PIO cannot pull more than 1 byte at a
+; time from the TX FIFO for this config, and cannot post process that byte.
+;
+; Register read commands don't transmit any payload and receive 1 byte for the
+; ETH reads and 2 bytes for MAC and MII reads, the first of which is garbage.
+; Memory reads can receive up to 32 bytes of payload. Again, it's a limitation
+; of PIO and not the slave.
+;
+; We run this program such that each SPI clock cycle takes 10 PIO clocks to
+; complete. It is so that we have the cycles for the extra control logic not
+; related to manipulating the output pins. Appropriate waits are introduced
+; manually to achieve a stable clock.
 
 .program enc28j60_spi
 .side_set 2 opt
@@ -39,12 +48,12 @@ loop_tx:
   jmp !x end_tx
 
   ; out a data bit before the clock edge
-  out pins, 1 [2]
+  out pins, 1 [1]
 
   ; rise the clock for 6 clock cycles, two nops due to the instruction size
   ; constraints
   nop side 1 [3]
-  nop [1]
+  nop
 
   ; lower the clock
   nop side 0
@@ -53,7 +62,7 @@ end_tx:
 
   ; wait 3 cycles, so that we don't jitter the clock signal, lower the MOSI
   nop
-  set pins 0 [1]
+  set pins 0
 
   ; clock in the slave's response
 loop_rx:
@@ -65,10 +74,10 @@ loop_rx:
 
   ; because the above delay should have been 5 but we can't encode it due to the
   ; instruction size constraints
-  nop [1]
+  nop
 
   ; lower the clock
-  nop side 0 [3]
+  nop side 0 [2]
   jmp y-- loop_rx
 end_rx:
 
