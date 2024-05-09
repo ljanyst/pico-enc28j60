@@ -26,6 +26,7 @@ typedef struct {
 
 typedef struct {
     enc28j60_config *cfg;
+    uint16_t wptr;
 } enc28j60;
 
 //! Get a default configuration object
@@ -57,3 +58,9 @@ bool enc28j60_irq_tx(uint8_t flags);
 
 //! Check if the interrupt is the receive interrupt
 bool enc28j60_irq_rx(uint8_t flags);
+
+//! Transmit frame
+bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data);
+
+//! Receive frame
+bool enc28j60_frame_rx_blk(enc28j60 *eth, void *data);

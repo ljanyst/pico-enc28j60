@@ -236,6 +236,15 @@
 // MISTAT: Not valid
 #define NVALID 0x4
 
+// ECON1: Receive enable
+#define RXEN 0x4
+
+// ECON1: Transmit request to send
+#define TXRTS 0x8
+
+// ECON2: Packet Decrement
+#define PKTDEC 0x40
+
 // PHY registers
 #define PHCON1 0x0
 #define PHSTAT1 0x1

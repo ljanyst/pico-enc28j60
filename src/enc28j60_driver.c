@@ -117,10 +117,18 @@ static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
     reg_write_blk(eth, ERXRDPTL, 0);
     reg_write_blk(eth, ERXRDPTH, 0);
 
+    // Read pointer to the beginning of the receive buffer
+    reg_write_blk(eth, ERDPTL, 0);
+    reg_write_blk(eth, ERDPTH, 0);
+
+    // Write pointer to the beginning of the transmit buffer
+    reg_write_blk(eth, EWRPTL, cfg->rx_size);
+    reg_write_blk(eth, EWRPTH, cfg->rx_size >> 8);
+
     // Accept only valid unicast, multicast, and broadcast packets;
     // sections 6.3 and 8.0
     bank_set_blk(eth, 1);
-    reg_write_blk(eth, ERXFCON, UCEN | CRCEN | MCEN | BCEN);
+    reg_write_blk(eth, ERXFCON, UCEN | CRCEN);
 
     // Wait for the oscilator to stabilize before accessing MAC or PHY
     while (!(reg_read_e_blk(eth, ESTAT) & CLKRDY))
@@ -177,6 +185,9 @@ static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
         reg_write_blk(eth, EIR, 0);
         reg_write_blk(eth, EIE, INTIE | PKTIE | LINKIE | TXIE);
     }
+
+    // Enable the receiver
+    reg_bits_set_blk(eth, ECON1, RXEN);
 }
 
 enc28j60 *enc28j60_init(enc28j60_config *cfg)
@@ -190,6 +201,7 @@ enc28j60 *enc28j60_init(enc28j60_config *cfg)
         panic("Failed to allocate memory for ENC28J60 object");
     }
     eth->cfg = cfg;
+    eth->wptr = cfg->rx_size;
 
     initialize_io(cfg);
     initialize_enc28j60(eth, cfg);
@@ -247,4 +259,79 @@ bool enc28j60_irq_tx(uint8_t flags)
 bool enc28j60_irq_rx(uint8_t flags)
 {
     return flags & PKTIF;
+}
+
+//! Transmit frame
+bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data)
+{
+    uint64_t zero = 0;
+    const uint8_t *ptr = data;
+    size_t remaining = size;
+    size_t to_write;
+
+    // Set the write pointer to the beginnin of the transmit buffer as at the
+    // moment we will limit transmitting to one packet at a time
+    reg_write_blk(eth, EWRPTL, eth->wptr);
+    reg_write_blk(eth, EWRPTH, eth->wptr >> 8);
+
+    // Control byte
+    mem_write_blk(eth, 1, &zero);
+
+    // Data
+    while (remaining) {
+        to_write = remaining;
+        if (to_write > 30) {
+            to_write = 30;
+        }
+        mem_write_blk(eth, to_write, ptr);
+        ptr += to_write;
+        remaining -= to_write;
+    }
+
+    // Padding for status footer
+    mem_write_blk(eth, 7, &zero);
+
+    // Start of the packet
+    bank_set_blk(eth, 0);
+    reg_write_blk(eth, ETXSTL, eth->wptr);
+    reg_write_blk(eth, ETXSTH, eth->wptr >> 8);
+
+    // Last byte of the data payload
+    uint16_t last = eth->wptr + size;
+    reg_write_blk(eth, ETXNDL, last);
+    reg_write_blk(eth, ETXNDH, last >> 8);
+
+    // Fire things up
+    reg_bits_set_blk(eth, ECON1, TXRTS);
+    return true;
+}
+
+//! Receive frame
+bool enc28j60_frame_rx_blk(enc28j60 *eth, void *data)
+{
+    uint8_t header[6] = { 0 };
+    mem_read_blk(eth, 6, header);
+    uint16_t next = (((uint16_t)header[1]) << 8) | header[0];
+    uint16_t size = (((uint16_t)header[3]) << 8) | header[2];
+
+    uint8_t *ptr = data;
+    size_t remaining = size;
+    size_t to_read;
+
+    // Data
+    while (remaining) {
+        to_read = remaining;
+        if (to_read > 31) {
+            to_read = 31;
+        }
+        mem_read_blk(eth, to_read, ptr);
+        ptr += to_read;
+        remaining -= to_read;
+    }
+
+    reg_write_blk(eth, ERXRDPTL, next);
+    reg_write_blk(eth, ERXRDPTH, next >> 8);
+    reg_bits_set_blk(eth, ECON2, PKTDEC);
+
+    return true;
 }
