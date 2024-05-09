@@ -16,13 +16,13 @@
 ;
 ; There's always at least one TX byte - the command header - as described in
 ; chapter 4.2 of the manual.  Register write commands have one byte of payload
-; to transmit, while the memory write can transmit up to 31. This is a
+; to transmit, while the memory write can transmit up to 30. This is a
 ; limitation caused by the fact that PIO cannot pull more than 1 byte at a
 ; time from the TX FIFO for this config, and cannot post process that byte.
 ;
 ; Register read commands don't transmit any payload and receive 1 byte for the
 ; ETH reads and 2 bytes for MAC and MII reads, the first of which is garbage.
-; Memory reads can receive up to 32 bytes of payload. Again, it's a limitation
+; Memory reads can receive up to 31 bytes of payload. Again, it's a limitation
 ; of PIO and not the slave.
 ;
 ; We run this program such that each SPI clock cycle takes 10 PIO clocks to
