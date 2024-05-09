@@ -356,25 +356,37 @@ static inline void reg_write_p_blk(enc28j60 *eth, uint8_t addr, uint16_t data)
 }
 
 //! Write memory; changes the selected bank
-static inline void mem_write_blk(enc28j60 *eth, uint16_t addr, uint8_t size,
-                                 const void *data)
+static inline void mem_write_blk(enc28j60 *eth, uint8_t size, const void *data)
 {
-    bank_set_blk(eth, 0);
-    reg_write_blk(eth, EWRPTL, addr);
-    reg_write_blk(eth, EWRPTH, addr >> 8);
     uint32_t cmd = WBM_CMD(size);
     enc28j60_execute_blocking(eth, cmd, NULL, data);
 }
 
 //! Write memory; changes the selected bank
-static inline void mem_read_blk(enc28j60 *eth, uint16_t addr, uint8_t size,
-                                void *data)
+static inline void mem_read_blk(enc28j60 *eth, uint8_t size, void *data)
+{
+    uint32_t cmd = RBM_CMD(size);
+    enc28j60_execute_blocking(eth, cmd, data, NULL);
+}
+
+//! Write memory; changes the selected bank
+static inline void mem_write_at_blk(enc28j60 *eth, uint16_t addr, uint8_t size,
+                                    const void *data)
+{
+    bank_set_blk(eth, 0);
+    reg_write_blk(eth, EWRPTL, addr);
+    reg_write_blk(eth, EWRPTH, addr >> 8);
+    mem_write_blk(eth, size, data);
+}
+
+//! Write memory; changes the selected bank
+static inline void mem_read_at_blk(enc28j60 *eth, uint16_t addr, uint8_t size,
+                                   void *data)
 {
     bank_set_blk(eth, 0);
     reg_write_blk(eth, ERDPTL, addr);
     reg_write_blk(eth, ERDPTH, addr >> 8);
-    uint32_t cmd = RBM_CMD(size);
-    enc28j60_execute_blocking(eth, cmd, data, NULL);
+    mem_read_blk(eth, size, data);
 }
 
 //! Reset the device
