@@ -1,9 +1,9 @@
 // Copyright 2024 Lukasz Janyst <lukasz@jany.st>
 // Licensed under the MIT license, see the LICENSE file for details.
 
-#include "pico/enc28j60_driver.h"
-#include "enc28j60_cmd.h"
-#include "enc28j60_spi.pio.h"
+#include "pico/enc28j60-driver.h"
+#include "enc28j60-cmd.h"
+#include "enc28j60-spi.pio.h"
 
 #include <hardware/clocks.h>
 #include <hardware/gpio.h>

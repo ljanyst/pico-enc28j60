@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pico/enc28j60_driver.h"
+#include "pico/enc28j60-driver.h"
 
 #include <stdint.h>
 

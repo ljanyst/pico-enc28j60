@@ -1,7 +1,7 @@
 // Copyright 2024 Lukasz Janyst <lukasz@jany.st>
 // Licensed under the MIT license, see the LICENSE file for details.
 
-#include "enc28j60_cmd.h"
+#include "enc28j60-cmd.h"
 
 // Don't keep this function in flash
 void __time_critical_func(enc28j60_execute_blocking)(enc28j60 *eth,
