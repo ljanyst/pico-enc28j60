@@ -42,16 +42,16 @@ enc28j60 *enc28j60_init(enc28j60_config *cfg);
 void enc28j60_deinit(enc28j60 *eth);
 
 //! Get the revision id of the hardware
-uint8_t enc28j60_revision(enc28j60 *eth);
+uint8_t enc28j60_revision_blk(enc28j60 *eth);
 
 //! Get link status
-bool enc28j60_link_status(enc28j60 *eth);
+bool enc28j60_link_status_blk(enc28j60 *eth);
 
 //! Disable the interrupt and get the interrupt flags
-uint8_t enc28j60_irq_flags(enc28j60 *eth);
+uint8_t enc28j60_irq_flags_blk(enc28j60 *eth);
 
 //! Acknowledge and enable the interrupt
-void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags);
+void enc28j60_irq_ack_blk(enc28j60 *eth, uint8_t flags);
 
 //! Check if the interrupt is the link interrput
 bool enc28j60_irq_is_link(uint8_t flags);

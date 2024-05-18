@@ -239,13 +239,13 @@ enc28j60 *enc28j60_init(enc28j60_config *cfg)
     return eth;
 }
 
-uint8_t enc28j60_revision(enc28j60 *eth)
+uint8_t enc28j60_revision_blk(enc28j60 *eth)
 {
     bank_set_blk(eth, 3);
     return reg_read_e_blk(eth, EREVID);
 }
 
-bool enc28j60_link_status(enc28j60 *eth)
+bool enc28j60_link_status_blk(enc28j60 *eth)
 {
     uint16_t phstat2 = reg_read_p_blk(eth, PHSTAT2);
     return (phstat2 & LSTAT) ? 1 : 0;
@@ -255,7 +255,7 @@ void enc28j60_deinit(enc28j60 *eth)
 {
 }
 
-uint8_t enc28j60_irq_flags(enc28j60 *eth)
+uint8_t enc28j60_irq_flags_blk(enc28j60 *eth)
 {
     // According to the section 12 of the manual
     reg_bits_clear_blk(eth, EIE, INTIE);
@@ -263,7 +263,7 @@ uint8_t enc28j60_irq_flags(enc28j60 *eth)
     return flags;
 }
 
-void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags)
+void enc28j60_irq_ack_blk(enc28j60 *eth, uint8_t flags)
 {
     // If the interrupt was a link interrupt, clear the PGIF flag by readinb
     // PHIR; section 12.1.5 of the manual
