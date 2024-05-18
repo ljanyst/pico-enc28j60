@@ -12,6 +12,27 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+typedef struct irq_arg_chain {
+    uint gpio;
+    void *data;
+    enc28j60_irq_hanler cb;
+    struct irq_arg_chain *next;
+} irq_arg_chain;
+
+static irq_arg_chain irq_args;
+
+static void __time_critical_func(irq_handler)(uint gpio, uint32_t events)
+{
+    irq_arg_chain *cur = irq_args.next;
+    while (cur) {
+        if (gpio == cur->gpio) {
+            cur->cb(cur->data);
+            break;
+        }
+        cur = cur->next;
+    }
+}
+
 enc28j60_config *enc28j60_get_default_config()
 {
     enc28j60_config *cfg = calloc(1, sizeof(enc28j60_config));
@@ -87,8 +108,17 @@ static void initialize_io(enc28j60_config *cfg)
 
     // Initialize the GPIO interrupt
     if (cfg->irq_cb) {
+        irq_arg_chain *arg = calloc(1, sizeof(irq_arg_chain));
+        if (arg == NULL) {
+            panic("Failed to allocate irq_arg_chain object");
+        }
+        arg->gpio = cfg->irq_pin;
+        arg->data = cfg->irq_data;
+        arg->cb = cfg->irq_cb;
+        arg->next = irq_args.next;
+        irq_args.next = arg;
         gpio_set_irq_enabled_with_callback(cfg->irq_pin, GPIO_IRQ_EDGE_FALL,
-                                           true, cfg->irq_cb);
+                                           true, irq_handler);
     }
 }
 

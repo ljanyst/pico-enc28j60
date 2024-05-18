@@ -6,6 +6,8 @@
 #include <hardware/pio.h>
 #include <stdint.h>
 
+typedef void (*enc28j60_irq_hanler)(void *);
+
 typedef struct {
     PIO pio;
     uint sm;
@@ -21,7 +23,8 @@ typedef struct {
     uint16_t rx_size;
 
     uint8_t mac_addr[6];
-    void (*irq_cb)();
+    void *irq_data;
+    enc28j60_irq_hanler irq_cb;
 } enc28j60_config;
 
 typedef struct {
