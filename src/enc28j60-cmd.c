@@ -96,21 +96,30 @@ static void add_channel_callback(uint irq, uint channel, void (*cb)(void *),
     irq_args.next = arg;
 }
 
-#define CMD_BUFF_TX_SIZE 512
-#define CMD_BUFF_RX_SIZE 64
+typedef struct {
+    uint32_t len;
+    const void *data;
+} tx_ctrl_t;
+
+#define TX_SIZE 512
+#define RX_SIZE 64
+#define CTRL_NUM 64
 
 struct enc28j60_cmd_buf {
-    void *tx_buf;
+    uint8_t tx_buf[TX_SIZE];
     uint8_t *tx_buf_ptr;
 
-    void *rx_buf;
+    uint8_t rx_buf[RX_SIZE];
     uint8_t *rx_buf_ptr;
+
+    tx_ctrl_t tx_ctrl[CTRL_NUM];
 
     uint16_t tx_bytes;
     uint16_t rx_bytes;
 
     uint tx_channel;
     uint rx_channel;
+    uint tx_ctrl_channel;
 };
 
 static void __time_critical_func(tx_irq_handler)(void *data)
@@ -139,17 +148,24 @@ void enc28j60_cmd_buf_init(enc28j60 *eth)
     }
 
     enc28j60_cmd_buf *b = eth->cmd_buf;
-    b->tx_buf = malloc(CMD_BUFF_TX_SIZE);
-    b->rx_buf = malloc(CMD_BUFF_RX_SIZE);
     b->tx_buf_ptr = b->tx_buf;
     b->rx_buf_ptr = b->rx_buf;
 
     b->tx_channel = dma_claim_unused_channel(true);
+    b->tx_ctrl_channel = dma_claim_unused_channel(true);
+
     dma_channel_config c = dma_channel_get_default_config(b->tx_channel);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
     channel_config_set_read_increment(&c, true);
     channel_config_set_write_increment(&c, false);
     channel_config_set_dreq(&c, pio_get_dreq(cfg->pio, cfg->sm, true));
+
+    // Trigger trigger the control channel when tx channel completes
+    channel_config_set_chain_to(&c, b->tx_ctrl_channel);
+
+    // Raise the IRQ when 0 is written to a trigger register (end of chain)
+    channel_config_set_irq_quiet(&c, true);
+
     dma_channel_configure(b->tx_channel, &c,
                           (void *)&cfg->pio->txf[cfg->sm], // write address
                           NULL, // read address
@@ -174,6 +190,23 @@ void enc28j60_cmd_buf_init(enc28j60 *eth)
     add_channel_callback(cfg->dma_irq, b->rx_channel, rx_irq_handler, eth);
     dma_irqn_set_channel_enabled(cfg->dma_irq, b->rx_channel, true);
 
+    c = dma_channel_get_default_config(b->tx_ctrl_channel);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, true);
+    channel_config_set_write_increment(&c, true);
+
+    // Only 3 lower bits of the write address are allowed to change, so we loop
+    // every 8 bytes written
+    channel_config_set_ring(&c, true, 3);
+
+    // The DMA's four CSRs are aliased multiple times in memory. Each alias —
+    // of which there are four — exposes the same four physical registers, but
+    // in a different order.
+    // We'll use alias 3. See section 2.5.2.1. of the RP2040 datasheet.
+    dma_channel_configure(b->tx_ctrl_channel, &c,
+                          &dma_hw->ch[b->tx_channel].al3_transfer_count, NULL,
+                          0, false);
+
     uint irq = cfg->dma_irq ? DMA_IRQ_1 : DMA_IRQ_0;
     irq_add_shared_handler(irq, dma_irq_handler,
                            PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
@@ -189,11 +222,11 @@ bool enc28j60_cmd_buf_encode_cmd(enc28j60 *eth, uint32_t cmd, const void *src)
     size_t tx_sz = 2 + CMD_TXSZ(cmd);
     uint8_t data[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
 
-    if (b->tx_bytes + tx_sz > CMD_BUFF_TX_SIZE) {
+    if (b->tx_bytes + tx_sz > TX_SIZE) {
         return false;
     }
 
-    if (b->rx_bytes + rx_sz > CMD_BUFF_RX_SIZE) {
+    if (b->rx_bytes + rx_sz > RX_SIZE) {
         return false;
     }
 
@@ -210,8 +243,7 @@ bool enc28j60_cmd_buf_decode_rcr(enc28j60 *eth, bool is_eth, uint8_t *val)
 {
     enc28j60_cmd_buf *b = eth->cmd_buf;
     size_t rx_sz = is_eth ? 1 : 2;
-    if ((uint32_t)b->rx_buf_ptr - (uint32_t)b->rx_buf + rx_sz >=
-        CMD_BUFF_RX_SIZE) {
+    if ((uint32_t)b->rx_buf_ptr - (uint32_t)b->rx_buf + rx_sz >= RX_SIZE) {
         return false;
     }
 
@@ -244,8 +276,11 @@ void enc28j60_cmd_buf_execute(enc28j60 *eth)
         dma_channel_set_trans_count(b->rx_channel, b->rx_bytes, true);
     }
 
-    dma_channel_set_read_addr(b->tx_channel, b->tx_buf, false);
-    dma_channel_set_trans_count(b->tx_channel, b->tx_bytes, true);
+    b->tx_ctrl[0].data = b->tx_buf;
+    b->tx_ctrl[0].len = b->tx_bytes;
+
+    dma_channel_set_read_addr(b->tx_ctrl_channel, b->tx_ctrl, false);
+    dma_channel_set_trans_count(b->tx_ctrl_channel, 2, true);
 
     cfg->notify.wait(cfg->notify.data);
 }
