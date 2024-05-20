@@ -110,7 +110,7 @@ static void initialize_io(enc28j60_config *cfg)
     if (cfg->irq_cb) {
         irq_arg_chain *arg = calloc(1, sizeof(irq_arg_chain));
         if (arg == NULL) {
-            panic("Failed to allocate irq_arg_chain object");
+            panic("Failed to allocate irq_arg_chain object for gpio");
         }
         arg->gpio = cfg->irq_pin;
         arg->data = cfg->irq_data;
@@ -236,6 +236,10 @@ enc28j60 *enc28j60_init(enc28j60_config *cfg)
     initialize_io(cfg);
     initialize_enc28j60(eth, cfg);
 
+    if (cfg->notify.notify != NULL && cfg->notify.wait != NULL) {
+        enc28j60_cmd_buf_init(eth);
+    }
+
     return eth;
 }
 
@@ -266,18 +270,17 @@ uint8_t enc28j60_irq_flags_blk(enc28j60 *eth)
 void enc28j60_irq_phy_ack_blk(enc28j60 *eth)
 {
     // Clear the PGIF flag by readin PHIR; section 12.1.5 of the manual
-   reg_read_p_blk(eth, PHIR);
+    reg_read_p_blk(eth, PHIR);
 }
 
 void enc28j60_irq_ack_blk(enc28j60 *eth, uint8_t flags)
 {
-    // If the interrupt was a link interrupt, clear the PGIF flag by reading
-    // PHIR; section 12.1.5 of the manual
+    // If the interrupt was a link interrupt, ack it directly in the PHY
     if (flags & LINKIF) {
-        reg_read_p_blk(eth, PHIR);
+        enc28j60_irq_phy_ack_blk(eth);
     }
 
-    // Accordint to the section 12 of the manual
+    // According to the section 12 of the manual
     reg_bits_clear_blk(eth, EIR, flags);
     reg_bits_set_blk(eth, EIE, INTIE);
 }
@@ -287,17 +290,16 @@ bool enc28j60_irq_is_link(uint8_t flags)
     return flags & LINKIF;
 }
 
-bool enc28j60_irq_tx(uint8_t flags)
+bool enc28j60_irq_is_tx(uint8_t flags)
 {
     return flags & TXIF;
 }
 
-bool enc28j60_irq_rx(uint8_t flags)
+bool enc28j60_irq_is_rx(uint8_t flags)
 {
     return flags & PKTIF;
 }
 
-//! Transmit frame
 bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data)
 {
     uint64_t zero = 0;
@@ -342,7 +344,6 @@ bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data)
     return true;
 }
 
-//! Receive frame
 bool enc28j60_frame_rx_blk(enc28j60 *eth, void *data)
 {
     uint8_t header[6] = { 0 };
@@ -370,4 +371,45 @@ bool enc28j60_frame_rx_blk(enc28j60 *eth, void *data)
     reg_bits_set_blk(eth, ECON2, PKTDEC);
 
     return true;
+}
+
+uint8_t enc28j60_irq_flags(enc28j60 *eth)
+{
+    // According to the section 12 of the manual
+    uint8_t flags = 0;
+    enc28j60_cmd_buf_reset(eth);
+    enc28j60_cmd_buf_encode_cmd(eth, BFC_CMD(EIE, INTIE), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, RCR_E_CMD(EIR), NULL);
+    enc28j60_cmd_buf_execute(eth);
+    enc28j60_cmd_buf_decode_rcr(eth, true, &flags);
+    return flags;
+}
+
+void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags)
+{
+    // If the interrupt was a link interrupt, ack it directly in the PHY
+    if (flags & LINKIF) {
+        enc28j60_irq_phy_ack_blk(eth);
+    }
+
+    // According to the section 12 of the manual
+    enc28j60_cmd_buf_reset(eth);
+    enc28j60_cmd_buf_encode_cmd(eth, BFC_CMD(EIR, flags), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(EIE, INTIE), NULL);
+    enc28j60_cmd_buf_execute(eth);
+}
+
+uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
+{
+    return 0xffffffff;
+}
+
+bool enc28j60_frame_tx(enc28j60 *eth, size_t size, uint16_t frame_id)
+{
+    return false;
+}
+
+bool enc28j60_frame_rx(enc28j60 *eth, size_t size, const void *buffer)
+{
+    return false;
 }

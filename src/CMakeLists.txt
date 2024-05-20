@@ -17,6 +17,7 @@ target_link_libraries(
   pico_enc28j60_driver
   INTERFACE
   hardware_pio
+  hardware_dma
 )
 
 pico_add_library(pico_enc28j60_freertos_driver)

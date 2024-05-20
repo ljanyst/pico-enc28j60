@@ -404,3 +404,24 @@ static inline void system_reset(enc28j60 *eth)
     uint32_t cmd = SRC_CMD();
     enc28j60_execute_blocking(eth, cmd, NULL, NULL);
 }
+
+//! Initialize the command buffer
+void enc28j60_cmd_buf_init(enc28j60 *eth);
+
+//! Encode a command in the transmission buffer.
+//!
+//! If RBM commands are issued, no other read commands may be issued and the
+//! rx_ptr data member of the command buffer must point to the memory where
+//! the received data will be stored.
+//!
+//! @param src source buffer for the WBM command, not used otherwise
+bool enc28j60_cmd_buf_encode_cmd(enc28j60 *eth, uint32_t cmd, const void *src);
+
+//! Decode the results of control register reads
+bool enc28j60_cmd_buf_decode_rcr(enc28j60 *eth, bool is_eth, uint8_t *val);
+
+//! Reset the state of the buffer
+void enc28j60_cmd_buf_reset(enc28j60 *eth);
+
+//! Execute the command buffer
+void enc28j60_cmd_buf_execute(enc28j60 *eth);
