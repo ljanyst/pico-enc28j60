@@ -263,9 +263,15 @@ uint8_t enc28j60_irq_flags_blk(enc28j60 *eth)
     return flags;
 }
 
+void enc28j60_irq_phy_ack_blk(enc28j60 *eth)
+{
+    // Clear the PGIF flag by readin PHIR; section 12.1.5 of the manual
+   reg_read_p_blk(eth, PHIR);
+}
+
 void enc28j60_irq_ack_blk(enc28j60 *eth, uint8_t flags)
 {
-    // If the interrupt was a link interrupt, clear the PGIF flag by readinb
+    // If the interrupt was a link interrupt, clear the PGIF flag by reading
     // PHIR; section 12.1.5 of the manual
     if (flags & LINKIF) {
         reg_read_p_blk(eth, PHIR);

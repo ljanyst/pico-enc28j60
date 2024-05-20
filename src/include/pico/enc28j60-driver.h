@@ -50,7 +50,10 @@ bool enc28j60_link_status_blk(enc28j60 *eth);
 //! Disable the interrupt and get the interrupt flags
 uint8_t enc28j60_irq_flags_blk(enc28j60 *eth);
 
-//! Acknowledge and enable the interrupt
+//! Acknowledge a phy interrupt
+void enc28j60_irq_phy_ack_blk(enc28j60 *eth);
+
+//! Acknowledge and enable the interrupt*
 void enc28j60_irq_ack_blk(enc28j60 *eth, uint8_t flags);
 
 //! Check if the interrupt is the link interrput
