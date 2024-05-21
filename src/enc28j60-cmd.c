@@ -103,18 +103,22 @@ typedef struct {
 
 #define TX_SIZE 512
 #define RX_SIZE 64
-#define CTRL_NUM 64
+#define CTRL_NUM 128
 
 struct enc28j60_cmd_buf {
     uint8_t tx_buf[TX_SIZE];
     uint8_t *tx_buf_ptr;
 
-    uint8_t rx_buf[RX_SIZE];
+    uint8_t rx_buf_int[RX_SIZE];
     uint8_t *rx_buf_ptr;
+    uint16_t rx_size;
+    uint8_t *rx_buf;
 
     tx_ctrl_t tx_ctrl[CTRL_NUM];
+    uint16_t tx_ctrl_idx;
 
-    uint16_t tx_bytes;
+    uint16_t tx_bytes_total;
+    uint16_t tx_bytes_current;
     uint16_t rx_bytes;
 
     uint tx_channel;
@@ -205,7 +209,7 @@ void enc28j60_cmd_buf_init(enc28j60 *eth)
     // We'll use alias 3. See section 2.5.2.1. of the RP2040 datasheet.
     dma_channel_configure(b->tx_ctrl_channel, &c,
                           &dma_hw->ch[b->tx_channel].al3_transfer_count, NULL,
-                          0, false);
+                          2, false);
 
     uint irq = cfg->dma_irq ? DMA_IRQ_1 : DMA_IRQ_0;
     irq_add_shared_handler(irq, dma_irq_handler,
@@ -220,23 +224,55 @@ bool enc28j60_cmd_buf_encode_cmd(enc28j60 *eth, uint32_t cmd, const void *src)
     uint8_t c = CMD_OP(cmd);
     size_t rx_sz = CMD_RXSZ(cmd);
     size_t tx_sz = 2 + CMD_TXSZ(cmd);
+    size_t payload_sz = 0;
     uint8_t data[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
 
-    if (b->tx_bytes + tx_sz > TX_SIZE) {
+    if (c == WBM_OP) {
+        payload_sz = tx_sz - 3;
+        tx_sz = 3;
+    }
+
+    if (b->tx_bytes_total + tx_sz > TX_SIZE) {
         return false;
     }
 
-    if (b->rx_bytes + rx_sz > RX_SIZE) {
+    if (b->rx_bytes + rx_sz > b->rx_size) {
         return false;
+    }
+
+    // We're starting a new buffer, so put its address in the control buffer.
+    // We need enough space to place this buffer, and a marker for the end
+    // of transmission.
+    if (b->tx_bytes_current == 0) {
+        if (c == WBM_OP && b->tx_ctrl_idx + 2 >= CTRL_NUM) {
+            return false;
+        }
+
+        if (b->tx_ctrl_idx + 2 >= CTRL_NUM) {
+            return false;
+        }
+
+        b->tx_ctrl[b->tx_ctrl_idx].data = b->tx_buf_ptr;
     }
 
     for (int i = 0; i < tx_sz; ++i) {
         *b->tx_buf_ptr++ = data[i];
     }
 
-    b->tx_bytes += tx_sz;
+    b->tx_bytes_total += tx_sz;
+    b->tx_bytes_current += tx_sz;
     b->rx_bytes += rx_sz;
-    return false;
+
+    if (c == WBM_OP) {
+        b->tx_ctrl[b->tx_ctrl_idx].len = b->tx_bytes_current;
+        ++b->tx_ctrl_idx;
+        b->tx_ctrl[b->tx_ctrl_idx].data = src;
+        b->tx_ctrl[b->tx_ctrl_idx].len = payload_sz;
+        ++b->tx_ctrl_idx;
+        b->tx_bytes_current = 0;
+    }
+
+    return true;
 }
 
 bool enc28j60_cmd_buf_decode_rcr(enc28j60 *eth, bool is_eth, uint8_t *val)
@@ -260,10 +296,16 @@ bool enc28j60_cmd_buf_decode_rcr(enc28j60 *eth, bool is_eth, uint8_t *val)
 void enc28j60_cmd_buf_reset(enc28j60 *eth)
 {
     enc28j60_cmd_buf *b = eth->cmd_buf;
-    b->tx_buf_ptr = b->tx_buf;
+
+    b->rx_buf = b->rx_buf_int;
+    b->rx_size = RX_SIZE;
     b->rx_buf_ptr = b->rx_buf;
-    b->tx_bytes = 0;
     b->rx_bytes = 0;
+
+    b->tx_buf_ptr = b->tx_buf;
+    b->tx_bytes_total = 0;
+    b->tx_bytes_current = 0;
+    b->tx_ctrl_idx = 0;
 }
 
 void enc28j60_cmd_buf_execute(enc28j60 *eth)
@@ -276,11 +318,24 @@ void enc28j60_cmd_buf_execute(enc28j60 *eth)
         dma_channel_set_trans_count(b->rx_channel, b->rx_bytes, true);
     }
 
-    b->tx_ctrl[0].data = b->tx_buf;
-    b->tx_ctrl[0].len = b->tx_bytes;
+    if (b->tx_bytes_current != 0) {
+        b->tx_ctrl[b->tx_ctrl_idx].len = b->tx_bytes_current;
+        b->tx_bytes_current = 0;
+        ++b->tx_ctrl_idx;
+    }
+    b->tx_ctrl[b->tx_ctrl_idx].data = NULL;
+    b->tx_ctrl[b->tx_ctrl_idx].len = 0;
 
-    dma_channel_set_read_addr(b->tx_ctrl_channel, b->tx_ctrl, false);
-    dma_channel_set_trans_count(b->tx_ctrl_channel, 2, true);
+    dma_channel_set_read_addr(b->tx_ctrl_channel, b->tx_ctrl, true);
 
     cfg->notify.wait(cfg->notify.data);
+}
+
+void enc28j60_cmd_buf_set_rx_ptr(enc28j60 *eth, size_t size, void *rbuf)
+{
+    enc28j60_cmd_buf *b = eth->cmd_buf;
+    b->rx_buf = rbuf;
+    b->rx_size = size;
+    b->rx_buf_ptr = b->rx_buf;
+    b->rx_bytes = 0;
 }

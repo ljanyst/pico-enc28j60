@@ -425,3 +425,6 @@ void enc28j60_cmd_buf_reset(enc28j60 *eth);
 
 //! Execute the command buffer
 void enc28j60_cmd_buf_execute(enc28j60 *eth);
+
+//! Set pointer to the rx buffer
+void enc28j60_cmd_buf_set_rx_ptr(enc28j60 *eth, size_t size, void *rbuf);
