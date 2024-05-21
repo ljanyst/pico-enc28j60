@@ -12,13 +12,14 @@
 typedef struct {
     enc28j60 *drv;
     QueueHandle_t tx_queue;
+    QueueHandle_t irq_sem;
     TaskHandle_t task;
 } driver_data;
 
 static void __time_critical_func(irq_handler)(void *data)
 {
     driver_data *dd = data;
-    xTaskNotifyIndexedFromISR(dd->task, 0, 0, eNoAction, NULL);
+    xSemaphoreGiveFromISR(dd->irq_sem, NULL);
 }
 
 static void driver_task(void *params)
@@ -26,7 +27,7 @@ static void driver_task(void *params)
     driver_data *dd = params;
     while (1) {
         uint8_t dev_status;
-        if (xTaskNotifyWaitIndexed(0, 0, 0, NULL, 10) == pdFALSE) {
+        if (xSemaphoreTake(dd->irq_sem, 10) == pdFALSE) {
             continue;
         }
 
@@ -48,13 +49,13 @@ static void driver_task(void *params)
 
 static void task_wait(void *arg)
 {
-    while (xTaskNotifyWaitIndexed(1, 0, 0, NULL, 10) == pdFALSE)
+    while (xTaskNotifyWait(0, 0, NULL, 10) == pdFALSE)
         ;
 }
 
 static void task_notify(void *arg)
 {
-    xTaskNotifyIndexed(*(TaskHandle_t *)arg, 1, 0, eNoAction);
+    xTaskNotify(*(TaskHandle_t *)arg, 0, eNoAction);
 }
 
 BaseType_t enc28j60_freertos_initialize(struct xNetworkInterface *pxDescriptor)
@@ -67,6 +68,11 @@ BaseType_t enc28j60_freertos_initialize(struct xNetworkInterface *pxDescriptor)
     dd->tx_queue = xQueueCreate(5, sizeof(NetworkBufferDescriptor_t *));
     if (dd->tx_queue == NULL) {
         panic("Failed to allocate memory for ENC28J60 FreeRTOS tx queue");
+    }
+
+    dd->irq_sem = xSemaphoreCreateBinary();
+    if (dd->tx_queue == NULL) {
+        panic("Failed to allocate memory for ENC28J60 FreeRTOS irq semaphore");
     }
 
     char *task_name = malloc(32);
