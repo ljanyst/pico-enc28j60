@@ -404,7 +404,12 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     return 0xffffffff;
 }
 
-bool enc28j60_frame_tx(enc28j60 *eth, size_t size, uint16_t frame_id)
+void enc28j60_frame_tx(enc28j60 *eth, uint32_t frame_id)
+{
+    return false;
+}
+
+void enc28j60_frame_tx_confirm(enc28j60 *eth, uint32_t frame_id)
 {
     return false;
 }

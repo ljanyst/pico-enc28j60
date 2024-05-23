@@ -81,20 +81,25 @@ bool enc28j60_irq_is_rx(uint8_t flags);
 bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data);
 
 //! Receive frame
-bool enc28j60_frame_rx_blkb(enc28j60 *eth, void *data);
+bool enc28j60_frame_rx_blk(enc28j60 *eth, void *data);
 
 //! Disable the interrupt and get the interrupt flags
 uint8_t enc28j60_irq_flags(enc28j60 *eth);
 
-//! Acknowledge and enable the interrupt*
+//! Acknowledge and enable the interrupt
 void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags);
+
+#define INVALID_FRAME_ID 0xffffffff
 
 //! Upload a frame
 //! Returns a frame id needed for transmission
 uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data);
 
 //! Transmit a frame
-bool enc28j60_frame_tx(enc28j60 *eth, size_t size, uint16_t frame_id);
+void enc28j60_frame_tx(enc28j60 *eth, uint32_t frame_id);
+
+//! Confirm frame transmission
+void enc28j60_frame_tx_confirm(enc28j60 *eth, uint32_t frame_id);
 
 //! Receive a frame
-bool enc28j60_frame_rx(enc28j60 *eth, size_t size, const void *buffer);
+void enc28j60_frame_rx(enc28j60 *eth, size_t size, const void *buffer);
