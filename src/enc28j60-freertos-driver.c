@@ -29,14 +29,9 @@ static void __time_critical_func(irq_handler)(void *data)
     xSemaphoreGiveFromISR(dd->irq_sem, NULL);
 }
 
-static bool want_frame(driver_data *dd)
+static NetworkBufferDescriptor_t *select(driver_data *dd, bool want_frame)
 {
-    return false;
-}
-
-static NetworkBufferDescriptor_t *select(driver_data *dd)
-{
-    if (!want_frame(dd)) {
+    if (!want_frame) {
         while (xSemaphoreTake(dd->irq_sem, 10) == pdFALSE) {
             continue;
         }
@@ -65,38 +60,77 @@ static void handle_frame(driver_data *dd, NetworkBufferDescriptor_t *frame)
 
 static void handle_irq(driver_data *dd)
 {
-    printf("---- got irq;\n");
-    uint8_t flags = enc28j60_irq_flags(dd->drv);
-    printf("---- flagx; %x\n", flags);
-    if (enc28j60_irq_is_link(flags)) {
-        dd->link_up = enc28j60_link_status_blk(dd->drv);
-        // We trigger this on any link status change because there is no way to
-        // signal that link is up. Re-initialization begins immediately after
-        // a link down event.
-        FreeRTOS_NetworkDown(dd->iface);
-    }
-
-    if (enc28j60_irq_is_tx(flags)) {
-        printf("---- got tx irq;\n");
-    }
-
-    if (enc28j60_irq_is_rx(flags)) {
-        printf("---- got rx irq;\n");
-    }
-
-    enc28j60_irq_ack(dd->drv, flags);
 }
 
 static void driver_task(void *params)
 {
     driver_data *dd = params;
+    bool rx_ready = false;
+    NetworkBufferDescriptor_t *tx_frame = NULL;
+    uint32_t tx_frame_id = INVALID_FRAME_ID;
+    uint32_t in_progress_frame_id = INVALID_FRAME_ID;
+
     while (1) {
-        NetworkBufferDescriptor_t *frame = select(dd);
-        if (frame) {
-            handle_frame(dd, frame);
-            continue;
+        NetworkBufferDescriptor_t *tx_frame_new = NULL;
+        tx_frame_new = select(dd, tx_frame == NULL && dd->link_up);
+
+        // If we didn't get a frame here, we were woken up because of an IRQ
+        if (!tx_frame_new) {
+            uint8_t flags = enc28j60_irq_flags(dd->drv);
+            printf("---- irq flags; %x\n", flags);
+            if (enc28j60_irq_is_link(flags)) {
+                // These events are exceptional, so we don't care if we block
+                // the CPU
+                dd->link_up = enc28j60_link_status_blk(dd->drv);
+
+                // We trigger this on any link status change because there is no
+                // way to signal that link is up. Re-initialization begins
+                // immediately after a link down event.
+                FreeRTOS_NetworkDown(dd->iface);
+            }
+
+            if (enc28j60_irq_is_tx(flags)) {
+                printf("---- got tx irq;\n");
+                enc28j60_frame_tx_confirm(dd->drv, in_progress_frame_id);
+                in_progress_frame_id = INVALID_FRAME_ID;
+            }
+
+            if (enc28j60_irq_is_rx(flags)) {
+                printf("---- got rx irq;\n");
+                rx_ready = true;
+            }
+
+            enc28j60_irq_ack(dd->drv, flags);
         }
-        handle_irq(dd);
+
+        // We have a frame a new frame
+        if (tx_frame_new) {
+            tx_frame = tx_frame_new;
+        }
+
+        // We have a frame to upload
+        if (tx_frame && tx_frame_id == INVALID_FRAME_ID) {
+            uint32_t id = enc28j60_frame_upload(dd->drv, tx_frame->xDataLength,
+                                                tx_frame->pucEthernetBuffer);
+            if (id != INVALID_FRAME_ID) {
+                tx_frame_id = id;
+            }
+        }
+
+        // We have a frame uploaded waiting to be transmitted, and there is no
+        // transimssion going on
+        if (tx_frame_id != INVALID_FRAME_ID &&
+            in_progress_frame_id == INVALID_FRAME_ID) {
+            enc28j60_frame_tx(dd->drv, tx_frame_id);
+            vReleaseNetworkBufferAndDescriptor(tx_frame);
+            tx_frame = NULL;
+            in_progress_frame_id = tx_frame_id;
+            tx_frame_id = INVALID_FRAME_ID;
+        }
+
+        // We have a frame to receive
+        if (rx_ready) {
+        }
     }
 }
 
