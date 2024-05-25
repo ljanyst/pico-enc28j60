@@ -17,13 +17,14 @@
 #define SRC_OP 0x7
 #define MEM_CONST 0x1a
 
-#define SH(VAL, N) (((uint32_t)(VAL)) << N)
+#define SH(VAL, N) (((uint32_t)(VAL & 0xff)) << N)
 
 // The PIO driver can receive up to 32 bytes with one command and send up to
 // 31 bytes, the sizes are in bits and must be multiples of 8bits, ie. we only
 // transmit th whole bytes
-#define CMD(TXSZ, RXSZ, OPCODE, ADDR, PAYLOAD) \
-    (SH((TXSZ + 8), 24) | SH(RXSZ, 16) | SH(OPCODE, 13) | SH(ADDR, 8) | PAYLOAD)
+#define CMD(TXSZ, RXSZ, OPCODE, ADDR, PAYLOAD)                          \
+    (SH((TXSZ + 8), 24) | SH(RXSZ, 16) | SH(OPCODE, 13) | SH(ADDR, 8) | \
+     (PAYLOAD & 0xff))
 
 // Extract opcode from a command
 #define CMD_OP(CMD) ((cmd >> 13) & 0x7)
