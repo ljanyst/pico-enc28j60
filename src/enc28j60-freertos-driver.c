@@ -2,10 +2,10 @@
 // Licensed under the MIT license, see the LICENSE file for details.
 
 #include "pico/enc28j60-freertos-driver.h"
+#include "pico/enc28j60-driver.h"
 
 #include <FreeRTOS.h>
 #include <FreeRTOS_IP.h>
-#include <pico/enc28j60-driver.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -16,50 +16,48 @@ typedef struct {
     enc28j60 *drv;
     NetworkInterface_t *iface;
     QueueHandle_t tx_queue;
-    QueueHandle_t irq_sem;
-    QueueSetHandle_t queue_set;
     TaskHandle_t task;
     bool link_up;
     bool initialized;
 } driver_data;
 
+#define IRQ_NOTIFICATION 0x1
+#define TX_NOTIFICATION 0x2
+
 static void __time_critical_func(irq_handler)(void *data)
 {
     driver_data *dd = data;
-    xSemaphoreGiveFromISR(dd->irq_sem, NULL);
+    xTaskNotifyIndexedFromISR(dd->task, 0, IRQ_NOTIFICATION, eSetBits, NULL);
 }
 
 static NetworkBufferDescriptor_t *select(driver_data *dd, bool want_frame)
 {
-    if (!want_frame) {
-        while (xSemaphoreTake(dd->irq_sem, 10) == pdFALSE) {
-            continue;
+    // Check if we can return a frame right away
+    if (want_frame) {
+        NetworkBufferDescriptor_t *frame;
+        if (xQueueReceive(dd->tx_queue, &frame, 0) == pdPASS) {
+            return frame;
         }
-        return NULL;
     }
 
     while (true) {
-        QueueSetMemberHandle_t activated;
-        activated = xQueueSelectFromSet(dd->queue_set, 10);
+        uint32_t val;
+        BaseType_t ret = xTaskNotifyWaitIndexed(0, 0, 0xffffffff, &val, 1000);
+        if (ret == pdFAIL) {
+            continue;
+        }
 
-        if (activated == dd->tx_queue) {
-            NetworkBufferDescriptor_t *frame;
-            xQueueReceive(dd->tx_queue, &frame, 0);
-            return frame;
-        } else if (activated == dd->irq_sem) {
-            xSemaphoreTake(dd->irq_sem, 0);
+        if (val & IRQ_NOTIFICATION) {
             return NULL;
         }
-        // timeout
+
+        if (want_frame && (val & TX_NOTIFICATION)) {
+            NetworkBufferDescriptor_t *frame;
+            if (xQueueReceive(dd->tx_queue, &frame, 0) == pdPASS) {
+                return frame;
+            }
+        }
     }
-}
-
-static void handle_frame(driver_data *dd, NetworkBufferDescriptor_t *frame)
-{
-}
-
-static void handle_irq(driver_data *dd)
-{
 }
 
 static void driver_task(void *params)
@@ -136,13 +134,13 @@ static void driver_task(void *params)
 
 static void task_wait(void *arg)
 {
-    while (xTaskNotifyWait(0, 0, NULL, 10) == pdFALSE)
+    while (xTaskNotifyWaitIndexed(1, 0, 0, NULL, 10) == pdFALSE)
         ;
 }
 
 static void task_notify(void *arg)
 {
-    xTaskNotify(*(TaskHandle_t *)arg, 0, eNoAction);
+    xTaskNotifyIndexedFromISR(arg, 1, 0, eNoAction, NULL);
 }
 
 BaseType_t enc28j60_freertos_initialize(struct xNetworkInterface *pxDescriptor)
@@ -167,20 +165,6 @@ BaseType_t enc28j60_freertos_initialize(struct xNetworkInterface *pxDescriptor)
         panic("Failed to allocate memory for ENC28J60 FreeRTOS tx queue");
     }
 
-    dd->irq_sem = xSemaphoreCreateBinary();
-    if (dd->tx_queue == NULL) {
-        panic("Failed to allocate memory for ENC28J60 FreeRTOS irq semaphore");
-    }
-
-    // +1 because there's going to be the queue and the semaphore in the set
-    dd->queue_set = xQueueCreateSet(TX_QUEUE_LENGTH + 1);
-    if (dd->tx_queue == NULL) {
-        panic("Failed to allocate memory for ENC28J60 FreeRTOS queue set");
-    }
-
-    xQueueAddToSet(dd->queue_set, dd->irq_sem);
-    xQueueAddToSet(dd->queue_set, dd->tx_queue);
-
     char *task_name = malloc(32);
     snprintf(task_name, 32, "ENC28J60 task for %s", pxDescriptor->pcName);
     xTaskCreate(driver_task, task_name, 1024, dd, 4, &dd->task);
@@ -189,7 +173,7 @@ BaseType_t enc28j60_freertos_initialize(struct xNetworkInterface *pxDescriptor)
     eth_cfg->irq_cb = irq_handler;
     eth_cfg->irq_data = dd;
 
-    eth_cfg->notify.data = &dd->task;
+    eth_cfg->notify.data = dd->task;
     eth_cfg->notify.notify = task_notify;
     eth_cfg->notify.wait = task_wait;
 
@@ -205,15 +189,16 @@ enc28j60_freertos_output_frame(struct xNetworkInterface *pxDescriptor,
                                NetworkBufferDescriptor_t *const pxNetworkBuffer,
                                BaseType_t xReleaseAfterSend)
 {
-    assert(xReleaseAfterSend); // we use the zero copy mode
+    // The return value of this function is always ignored
     driver_data *dd = pxDescriptor->pvArgument;
 
     if (!dd->link_up ||
-        xQueueSend(dd->tx_queue, pxNetworkBuffer, 10) != pdPASS) {
+        xQueueSend(dd->tx_queue, &pxNetworkBuffer, 10) != pdPASS) {
         vReleaseNetworkBufferAndDescriptor(pxNetworkBuffer);
+        return pdTRUE;
     }
 
-    // The return value of this function is always ignored
+    xTaskNotifyIndexed(dd->task, 0, TX_NOTIFICATION, eSetBits);
     return pdTRUE;
 }
 
