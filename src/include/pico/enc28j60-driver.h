@@ -41,6 +41,7 @@ typedef struct enc28j60_cmd_buf enc28j60_cmd_buf;
 typedef struct {
     enc28j60_config *cfg;
     enc28j60_cmd_buf *cmd_buf;
+    uint16_t dev_rptr;
     uint16_t wptr;
 } enc28j60;
 
