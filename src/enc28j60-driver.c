@@ -414,7 +414,7 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     if (eth->wptr >= eth->dev_rptr &&
         eth->wptr + size + TX_OVERHEAD_SIZE > RAM_SIZE) {
         if (eth->dev_rptr == eth->cfg->rx_size) {
-            return INVALID_FRAME_ID;
+            return ENC28J60_INVALID_FRAME_ID;
         }
         eth->wptr = eth->cfg->rx_size;
     }
@@ -423,7 +423,7 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     // can fit the frame
     if (eth->wptr < eth->dev_rptr &&
         eth->wptr + size + TX_OVERHEAD_SIZE >= eth->dev_rptr) {
-        return INVALID_FRAME_ID;
+        return ENC28J60_INVALID_FRAME_ID;
     }
 
     enc28j60_cmd_buf_reset(eth);
@@ -436,7 +436,7 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(EWRPTH, eth->wptr >> 8), NULL);
 
     // Set the frame header - transmit according to MACON3
-    static const char *zeros[7] = { 0 };
+    static const char *zeros[8] = { 0 };
     enc28j60_cmd_buf_encode_cmd(eth, WBM_CMD(1), zeros);
 
     // Encode the frame
@@ -444,32 +444,41 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     const uint8_t *ptr = data;
     while (remaining) {
         size_t to_write = remaining;
-        if (to_write > 30) {
-            to_write = 30;
+        if (to_write > WBM_MAX) {
+            to_write = WBM_MAX;
         }
         enc28j60_cmd_buf_encode_cmd(eth, WBM_CMD(to_write), ptr);
         ptr += to_write;
         remaining -= to_write;
     }
 
-    // Move the device write pointer to accomodate the epilog
-    enc28j60_cmd_buf_encode_cmd(eth, WBM_CMD(7), zeros);
-
-    // Exec the command buffer
-    enc28j60_cmd_buf_execute(eth);
-
     uint32_t id = ((uint32_t)eth->wptr) << 16;
     eth->wptr += size;
     id |= eth->wptr;
     eth->wptr += TX_OVERHEAD_SIZE;
+    uint8_t pad = 7;
+    if (eth->wptr % 2) {
+        ++eth->wptr;
+        pad = 8;
+    }
+
+    // Move the device write pointer to accomodate the epilog
+    enc28j60_cmd_buf_encode_cmd(eth, WBM_CMD(pad), zeros);
+
+    // Exec the command buffer
+    enc28j60_cmd_buf_execute(eth);
+
     return id;
 }
+
+#define TX_START(X) (X >> 16)
+#define TX_END(X) (X & 0xffff)
 
 void enc28j60_frame_tx(enc28j60 *eth, uint32_t frame_id)
 {
     // Section 7.1 of the datasheet
-    uint16_t start = frame_id >> 16;
-    uint16_t end = frame_id & 0xffff;
+    uint16_t start = TX_START(frame_id);
+    uint16_t end = TX_END(frame_id);
 
     enc28j60_cmd_buf_reset(eth);
 
@@ -488,8 +497,86 @@ void enc28j60_frame_tx(enc28j60 *eth, uint32_t frame_id)
 void enc28j60_frame_tx_confirm(enc28j60 *eth, uint32_t frame_id)
 {
     eth->dev_rptr = (frame_id & 0xffff) + TX_OVERHEAD_SIZE;
+    if (eth->dev_rptr % 2) {
+        ++eth->dev_rptr;
+    }
 }
 
-void enc28j60_frame_rx(enc28j60 *eth, size_t size, const void *buffer)
+uint32_t enc28j60_frame_rx_info(enc28j60 *eth)
 {
+    // Read the header - Section 7.2.2 of the datasheet
+    uint32_t ret = 0;
+    uint8_t val = 0;
+
+    enc28j60_cmd_buf_reset(eth);
+    enc28j60_cmd_buf_encode_cmd(eth, RBM_CMD(6), NULL);
+    enc28j60_cmd_buf_execute(eth);
+
+    enc28j60_cmd_buf_decode_rcr(eth, true, &val);
+    ret |= ((uint32_t)val) << 16;
+    enc28j60_cmd_buf_decode_rcr(eth, true, &val);
+    ret |= ((uint32_t)val) << 24;
+    enc28j60_cmd_buf_decode_rcr(eth, true, &val);
+    ret |= ((uint32_t)val);
+    uint16_t size = val;
+    enc28j60_cmd_buf_decode_rcr(eth, true, &val);
+    ret |= ((uint32_t)val) << 8;
+    return ret;
+}
+
+void enc28j60_frame_rx(enc28j60 *eth, uint32_t rx_info, void *buffer)
+{
+    uint16_t size = ENC28J60_RX_SIZE(rx_info);
+    uint16_t next_packet = ENC28J60_RX_NEXT(rx_info);
+
+    enc28j60_cmd_buf_reset(eth);
+    enc28j60_cmd_buf_set_rx_ptr(eth, size, buffer);
+
+    size_t remaining = size;
+    while (remaining) {
+        size_t to_read = remaining;
+        if (to_read > RBM_MAX) {
+            to_read = RBM_MAX;
+        }
+        enc28j60_cmd_buf_encode_cmd(eth, RBM_CMD(to_read), NULL);
+        remaining -= to_read;
+    }
+
+    // Register bank 0
+    enc28j60_cmd_buf_encode_cmd(eth, BFC_CMD(ECON1, 0x3), NULL);
+
+    // RX read pointer
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTL, next_packet), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
+
+    // RBM read pointer
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTL, next_packet), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
+
+    // Decrement the packet counter
+    enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(ECON2, PKTDEC), NULL);
+
+    enc28j60_cmd_buf_execute(eth);
+}
+
+void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info)
+{
+    uint16_t next_packet = ENC28J60_RX_NEXT(rx_info);
+
+    enc28j60_cmd_buf_reset(eth);
+    // Register bank 0
+    enc28j60_cmd_buf_encode_cmd(eth, BFC_CMD(ECON1, 0x3), NULL);
+
+    // RX read pointer
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTL, next_packet), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
+
+    // RBM read pointer
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTL, next_packet), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
+
+    // Decrement the packet counter
+    enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(ECON2, PKTDEC), NULL);
+
+    enc28j60_cmd_buf_execute(eth);
 }

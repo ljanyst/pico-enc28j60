@@ -406,6 +406,9 @@ static inline void system_reset(enc28j60 *eth)
     enc28j60_execute_blocking(eth, cmd, NULL, NULL);
 }
 
+#define RBM_MAX 31
+#define WBM_MAX 30
+
 //! Initialize the command buffer
 void enc28j60_cmd_buf_init(enc28j60 *eth);
 

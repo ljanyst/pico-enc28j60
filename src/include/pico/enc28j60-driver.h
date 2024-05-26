@@ -90,7 +90,7 @@ uint8_t enc28j60_irq_flags(enc28j60 *eth);
 //! Acknowledge and enable the interrupt
 void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags);
 
-#define INVALID_FRAME_ID 0xffffffff
+#define ENC28J60_INVALID_FRAME_ID 0xffffffff
 
 //! Upload a frame
 //! Returns a frame id needed for transmission
@@ -102,5 +102,14 @@ void enc28j60_frame_tx(enc28j60 *eth, uint32_t frame_id);
 //! Confirm frame transmission
 void enc28j60_frame_tx_confirm(enc28j60 *eth, uint32_t frame_id);
 
+//! Get the size of an incoxing frame
+uint32_t enc28j60_frame_rx_info(enc28j60 *eth);
+
+#define ENC28J60_RX_SIZE(X) (X & 0xffff)
+#define ENC28J60_RX_NEXT(X) (X >> 16)
+
 //! Receive a frame
-void enc28j60_frame_rx(enc28j60 *eth, size_t size, const void *buffer);
+void enc28j60_frame_rx(enc28j60 *eth, uint32_t rx_info, void *buffer);
+
+//! Discard the incoming frame
+void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info);
