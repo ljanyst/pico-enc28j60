@@ -60,22 +60,66 @@ static NetworkBufferDescriptor_t *select(driver_data *dd, bool want_frame)
     }
 }
 
+static void rx_frame(driver_data *dd)
+{
+    uint32_t rx_info = enc28j60_frame_rx_info(dd->drv);
+    size_t size = ENC28J60_RX_SIZE(rx_info);
+    NetworkBufferDescriptor_t *desc;
+    desc = pxGetNetworkBufferWithDescriptor(size, 0);
+
+    // No network buffer available, drop the frame
+    if (!desc) {
+        enc28j60_frame_discard(dd->drv, rx_info);
+        return;
+    }
+
+    desc->xDataLength = size;
+    enc28j60_frame_rx(dd->drv, rx_info, desc->pucEthernetBuffer);
+
+    // The stack is not interested in the frame
+    if (eConsiderFrameForProcessing(desc->pucEthernetBuffer) !=
+        eProcessBuffer) {
+        vReleaseNetworkBufferAndDescriptor(desc);
+        return;
+    }
+
+    desc->pxEndPoint =
+        FreeRTOS_MatchingEndpoint(dd->iface, desc->pucEthernetBuffer);
+
+    // No matching endpoint
+    if (desc->pxEndPoint == NULL) {
+        vReleaseNetworkBufferAndDescriptor(desc);
+        return;
+    }
+
+    desc->pxInterface = dd->iface;
+    IPStackEvent_t rx_event;
+    rx_event.eEventType = eNetworkRxEvent;
+    rx_event.pvData = desc;
+
+    // the frame could not be set without delay
+    if (xSendEventStructToIPTask(&rx_event, 0) == pdFALSE) {
+        vReleaseNetworkBufferAndDescriptor(desc);
+        return;
+    }
+}
+
 static void driver_task(void *params)
 {
     driver_data *dd = params;
-    bool rx_ready = false;
     NetworkBufferDescriptor_t *tx_frame = NULL;
-    uint32_t tx_frame_id = INVALID_FRAME_ID;
-    uint32_t in_progress_frame_id = INVALID_FRAME_ID;
+    uint32_t tx_frame_id = ENC28J60_INVALID_FRAME_ID;
+    uint32_t in_progress_frame_id = ENC28J60_INVALID_FRAME_ID;
 
     while (1) {
+        bool rx_ready = false;
         NetworkBufferDescriptor_t *tx_frame_new = NULL;
         tx_frame_new = select(dd, tx_frame == NULL && dd->link_up);
 
         // If we didn't get a frame here, we were woken up because of an IRQ
+        uint8_t flags = 0;
         if (!tx_frame_new) {
-            uint8_t flags = enc28j60_irq_flags(dd->drv);
-            printf("---- irq flags; %x\n", flags);
+            flags = enc28j60_irq_flags(dd->drv);
             if (enc28j60_irq_is_link(flags)) {
                 // These events are exceptional, so we don't care if we block
                 // the CPU
@@ -88,17 +132,13 @@ static void driver_task(void *params)
             }
 
             if (enc28j60_irq_is_tx(flags)) {
-                printf("---- got tx irq;\n");
                 enc28j60_frame_tx_confirm(dd->drv, in_progress_frame_id);
-                in_progress_frame_id = INVALID_FRAME_ID;
+                in_progress_frame_id = ENC28J60_INVALID_FRAME_ID;
             }
 
             if (enc28j60_irq_is_rx(flags)) {
-                printf("---- got rx irq;\n");
                 rx_ready = true;
             }
-
-            enc28j60_irq_ack(dd->drv, flags);
         }
 
         // We have a frame a new frame
@@ -107,27 +147,33 @@ static void driver_task(void *params)
         }
 
         // We have a frame to upload
-        if (tx_frame && tx_frame_id == INVALID_FRAME_ID) {
+        if (tx_frame && tx_frame_id == ENC28J60_INVALID_FRAME_ID) {
             uint32_t id = enc28j60_frame_upload(dd->drv, tx_frame->xDataLength,
                                                 tx_frame->pucEthernetBuffer);
-            if (id != INVALID_FRAME_ID) {
+            if (id != ENC28J60_INVALID_FRAME_ID) {
                 tx_frame_id = id;
             }
         }
 
         // We have a frame uploaded waiting to be transmitted, and there is no
         // transimssion going on
-        if (tx_frame_id != INVALID_FRAME_ID &&
-            in_progress_frame_id == INVALID_FRAME_ID) {
+        if (tx_frame_id != ENC28J60_INVALID_FRAME_ID &&
+            in_progress_frame_id == ENC28J60_INVALID_FRAME_ID) {
             enc28j60_frame_tx(dd->drv, tx_frame_id);
             vReleaseNetworkBufferAndDescriptor(tx_frame);
             tx_frame = NULL;
             in_progress_frame_id = tx_frame_id;
-            tx_frame_id = INVALID_FRAME_ID;
+            tx_frame_id = ENC28J60_INVALID_FRAME_ID;
         }
 
         // We have a frame to receive
         if (rx_ready) {
+            rx_frame(dd);
+        }
+
+        // Ack the interrupt if we're servicing one
+        if (flags) {
+            enc28j60_irq_ack(dd->drv, flags);
         }
     }
 }
