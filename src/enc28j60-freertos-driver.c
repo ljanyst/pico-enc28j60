@@ -117,9 +117,8 @@ static void driver_task(void *params)
         tx_frame_new = select(dd, tx_frame == NULL && dd->link_up);
 
         // If we didn't get a frame here, we were woken up because of an IRQ
-        uint8_t flags = 0;
         if (!tx_frame_new) {
-            flags = enc28j60_irq_flags(dd->drv);
+            uint8_t flags = enc28j60_irq_flags(dd->drv);
             if (enc28j60_irq_is_link(flags)) {
                 // These events are exceptional, so we don't care if we block
                 // the CPU
@@ -137,8 +136,9 @@ static void driver_task(void *params)
             }
 
             if (enc28j60_irq_is_rx(flags)) {
-                rx_ready = true;
+                rx_frame(dd);
             }
+            enc28j60_irq_ack(dd->drv, flags);
         }
 
         // We have a frame a new frame
@@ -164,16 +164,6 @@ static void driver_task(void *params)
             tx_frame = NULL;
             in_progress_frame_id = tx_frame_id;
             tx_frame_id = ENC28J60_INVALID_FRAME_ID;
-        }
-
-        // We have a frame to receive
-        if (rx_ready) {
-            rx_frame(dd);
-        }
-
-        // Ack the interrupt if we're servicing one
-        if (flags) {
-            enc28j60_irq_ack(dd->drv, flags);
         }
     }
 }
