@@ -163,7 +163,7 @@ static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
     // Accept only valid unicast, multicast, and broadcast packets;
     // sections 6.3 and 8.0
     bank_set_blk(eth, 1);
-    reg_write_blk(eth, ERXFCON, UCEN | CRCEN);
+    reg_write_blk(eth, ERXFCON, UCEN | CRCEN | MCEN | BCEN);
 
     // Wait for the oscilator to stabilize before accessing MAC or PHY
     while (!(reg_read_e_blk(eth, ESTAT) & CLKRDY))
