@@ -239,7 +239,7 @@ enc28j60_freertos_output_frame(struct xNetworkInterface *pxDescriptor,
     driver_data *dd = pxDescriptor->pvArgument;
 
     if (!dd->link_up ||
-        xQueueSend(dd->tx_queue, &pxNetworkBuffer, 10) != pdPASS) {
+        xQueueSend(dd->tx_queue, &pxNetworkBuffer, 0) != pdPASS) {
         vReleaseNetworkBufferAndDescriptor(pxNetworkBuffer);
         return pdTRUE;
     }
