@@ -518,7 +518,6 @@ uint32_t enc28j60_frame_rx_info(enc28j60 *eth)
     ret |= ((uint32_t)val) << 24;
     enc28j60_cmd_buf_decode_rcr(eth, true, &val);
     ret |= ((uint32_t)val);
-    uint16_t size = val;
     enc28j60_cmd_buf_decode_rcr(eth, true, &val);
     ret |= ((uint32_t)val) << 8;
     return ret;
@@ -550,8 +549,8 @@ void enc28j60_frame_rx(enc28j60 *eth, uint32_t rx_info, void *buffer)
     enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
 
     // RBM read pointer
-    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTL, next_packet), NULL);
-    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERDPTL, next_packet), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERDPTH, next_packet >> 8), NULL);
 
     // Decrement the packet counter
     enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(ECON2, PKTDEC), NULL);
@@ -572,8 +571,8 @@ void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info)
     enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
 
     // RBM read pointer
-    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTL, next_packet), NULL);
-    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERXRDPTH, next_packet >> 8), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERDPTL, next_packet), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(ERDPTH, next_packet >> 8), NULL);
 
     // Decrement the packet counter
     enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(ECON2, PKTDEC), NULL);
