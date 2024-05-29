@@ -441,8 +441,8 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     enc28j60_cmd_buf_encode_cmd(eth, WCR_CMD(EWRPTH, eth->wptr >> 8), NULL);
 
     // Set the frame header - transmit according to MACON3
-    static const char *zeros[8] = { 0 };
-    enc28j60_cmd_buf_encode_cmd(eth, WBM_CMD(1), zeros);
+    static const uint8_t zero = 0;
+    enc28j60_cmd_buf_encode_cmd(eth, WBM_CMD(1), &zero);
 
     // Encode the frame
     size_t remaining = size;
@@ -461,14 +461,9 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     eth->wptr += size;
     id |= eth->wptr;
     eth->wptr += TX_OVERHEAD_SIZE;
-    uint8_t pad = 7;
     if (eth->wptr % 2) {
         ++eth->wptr;
-        pad = 8;
     }
-
-    // Move the device write pointer to accomodate the epilog
-    enc28j60_cmd_buf_encode_cmd(eth, WBM_CMD(pad), zeros);
 
     // Exec the command buffer
     enc28j60_cmd_buf_execute(eth);
