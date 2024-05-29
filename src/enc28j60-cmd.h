@@ -207,6 +207,9 @@
 // EIE: Transmit enable
 #define TXIE 0x8
 
+// EIE: Receive error enable
+#define RXERIE 0x1
+
 // EIR: Receive packet pending flag
 #define PKTIF 0x40
 
@@ -215,6 +218,9 @@
 
 // EIR: Transmit flag
 #define TXIF 0x8
+
+// EIR: Receive error flag
+#define RXERIF 0x1
 
 // MACON1: MAC Receive Enable
 #define MARXEN 0x1

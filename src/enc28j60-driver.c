@@ -218,7 +218,7 @@ static void initialize_enc28j60(enc28j60 *eth, enc28j60_config *cfg)
     if (cfg->irq_cb) {
         reg_write_p_blk(eth, PHIE, PGEIE | PLNKIE);
         reg_write_blk(eth, EIR, 0);
-        reg_write_blk(eth, EIE, INTIE | PKTIE | LINKIE | TXIE);
+        reg_write_blk(eth, EIE, INTIE | PKTIE | LINKIE | TXIE | RXERIE);
     }
 
     // Enable the receiver
@@ -304,6 +304,11 @@ bool enc28j60_irq_is_tx(uint8_t flags)
 bool enc28j60_irq_is_rx(uint8_t flags)
 {
     return flags & PKTIF;
+}
+
+bool enc28j60_irq_is_rx_err(uint8_t flags)
+{
+    return flags & RXERIF;
 }
 
 bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data)
@@ -578,4 +583,17 @@ void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info)
     enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(ECON2, PKTDEC), NULL);
 
     enc28j60_cmd_buf_execute(eth);
+}
+
+uint8_t enc28j60_rx_count(enc28j60 *eth)
+{
+    uint8_t count = 0;
+    enc28j60_cmd_buf_reset(eth);
+    // Register bank 1
+    enc28j60_cmd_buf_encode_cmd(eth, BFC_CMD(ECON1, 0x3), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(ECON1, 0x1), NULL);
+    enc28j60_cmd_buf_encode_cmd(eth, RCR_E_CMD(EPKTCNT), NULL);
+    enc28j60_cmd_buf_execute(eth);
+    enc28j60_cmd_buf_decode_rcr(eth, true, &count);
+    return count;
 }

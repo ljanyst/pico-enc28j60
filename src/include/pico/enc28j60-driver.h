@@ -78,6 +78,9 @@ bool enc28j60_irq_is_tx(uint8_t flags);
 //! Check if the interrupt is the receive interrupt
 bool enc28j60_irq_is_rx(uint8_t flags);
 
+//! Check if the interrupt is the receive error interrupt
+bool enc28j60_irq_is_rx_err(uint8_t flags);
+
 //! Transmit frame
 bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data);
 
@@ -113,3 +116,6 @@ void enc28j60_frame_rx(enc28j60 *eth, uint32_t rx_info, void *buffer);
 
 //! Discard the incoming frame
 void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info);
+
+//! Get number of packets in the receive buffer
+uint8_t enc28j60_rx_count(enc28j60 *eth);
