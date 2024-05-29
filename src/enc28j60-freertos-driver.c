@@ -249,7 +249,6 @@ enc28j60_freertos_output_frame(struct xNetworkInterface *pxDescriptor,
 BaseType_t
 enc28j60_freertos_get_phy_link_status(NetworkInterface_t *pxInterface)
 {
-    // This function is not supposed to be called
-    panic("enc28j60_freertos_get_phy_link_status: Not implemented");
-    return pdFALSE;
+    driver_data *dd = pxInterface->pvArgument;
+    return dd->link_up;
 }
