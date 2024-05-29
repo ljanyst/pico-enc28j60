@@ -138,6 +138,15 @@ static void driver_task(void *params)
             if (enc28j60_irq_is_rx(flags)) {
                 rx_frame(dd);
             }
+
+            // The receive buffer is clogged, drain it
+            if (enc28j60_irq_is_rx_err(flags)) {
+                uint8_t count = enc28j60_rx_count(dd->drv);
+                for (int i = 0; i < count; ++i) {
+                    rx_frame(dd);
+                }
+            }
+
             enc28j60_irq_ack(dd->drv, flags);
         }
 
