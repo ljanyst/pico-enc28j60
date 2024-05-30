@@ -10,6 +10,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#if configTASK_NOTIFICATION_ARRAY_ENTRIES < 2
+#error "At least 2 task notifications are required for the driver to work"
+#endif
+
 #define TX_QUEUE_LENGTH 10
 
 typedef struct {
