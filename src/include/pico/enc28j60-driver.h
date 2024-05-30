@@ -81,12 +81,6 @@ bool enc28j60_irq_is_rx(uint8_t flags);
 //! Check if the interrupt is the receive error interrupt
 bool enc28j60_irq_is_rx_err(uint8_t flags);
 
-//! Transmit frame
-bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data);
-
-//! Receive frame
-bool enc28j60_frame_rx_blk(enc28j60 *eth, void *data);
-
 //! Disable the interrupt and get the interrupt flags
 uint8_t enc28j60_irq_flags(enc28j60 *eth);
 
@@ -98,24 +92,31 @@ void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags);
 //! Upload a frame
 //! Returns a frame id needed for transmission
 uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data);
+uint32_t enc28j60_frame_upload_blk(enc28j60 *eth, size_t size,
+                                   const void *data);
 
 //! Transmit a frame
 void enc28j60_frame_tx(enc28j60 *eth, uint32_t frame_id);
+void enc28j60_frame_tx_blk(enc28j60 *eth, uint32_t frame_id);
 
 //! Confirm frame transmission
 void enc28j60_frame_tx_confirm(enc28j60 *eth, uint32_t frame_id);
 
 //! Get the size of an incoxing frame
 uint32_t enc28j60_frame_rx_info(enc28j60 *eth);
+uint32_t enc28j60_frame_rx_info_blk(enc28j60 *eth);
 
 #define ENC28J60_RX_SIZE(X) (X & 0xffff)
 #define ENC28J60_RX_NEXT(X) (X >> 16)
 
 //! Receive a frame
 void enc28j60_frame_rx(enc28j60 *eth, uint32_t rx_info, void *buffer);
+void enc28j60_frame_rx_blk(enc28j60 *eth, uint32_t rx_info, void *buffer);
 
 //! Discard the incoming frame
 void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info);
+void enc28j60_frame_discard_blk(enc28j60 *eth, uint32_t rx_info);
 
 //! Get number of packets in the receive buffer
 uint8_t enc28j60_rx_count(enc28j60 *eth);
+uint8_t enc28j60_rx_count_blk(enc28j60 *eth);

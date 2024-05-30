@@ -311,79 +311,6 @@ bool enc28j60_irq_is_rx_err(uint8_t flags)
     return flags & RXERIF;
 }
 
-bool enc28j60_frame_tx_blk(enc28j60 *eth, size_t size, const void *data)
-{
-    uint64_t zero = 0;
-    const uint8_t *ptr = data;
-    size_t remaining = size;
-    size_t to_write;
-
-    // Set the write pointer to the beginnin of the transmit buffer as at the
-    // moment we will limit transmitting to one packet at a time
-    reg_write_blk(eth, EWRPTL, eth->wptr);
-    reg_write_blk(eth, EWRPTH, eth->wptr >> 8);
-
-    // Control byte
-    mem_write_blk(eth, 1, &zero);
-
-    // Data
-    while (remaining) {
-        to_write = remaining;
-        if (to_write > 30) {
-            to_write = 30;
-        }
-        mem_write_blk(eth, to_write, ptr);
-        ptr += to_write;
-        remaining -= to_write;
-    }
-
-    // Padding for status footer
-    mem_write_blk(eth, 7, &zero);
-
-    // Start of the packet
-    bank_set_blk(eth, 0);
-    reg_write_blk(eth, ETXSTL, eth->wptr);
-    reg_write_blk(eth, ETXSTH, eth->wptr >> 8);
-
-    // Last byte of the data payload
-    uint16_t last = eth->wptr + size;
-    reg_write_blk(eth, ETXNDL, last);
-    reg_write_blk(eth, ETXNDH, last >> 8);
-
-    // Fire things up
-    reg_bits_set_blk(eth, ECON1, TXRTS);
-    return true;
-}
-
-bool enc28j60_frame_rx_blk(enc28j60 *eth, void *data)
-{
-    uint8_t header[6] = { 0 };
-    mem_read_blk(eth, 6, header);
-    uint16_t next = (((uint16_t)header[1]) << 8) | header[0];
-    uint16_t size = (((uint16_t)header[3]) << 8) | header[2];
-
-    uint8_t *ptr = data;
-    size_t remaining = size;
-    size_t to_read;
-
-    // Data
-    while (remaining) {
-        to_read = remaining;
-        if (to_read > 31) {
-            to_read = 31;
-        }
-        mem_read_blk(eth, to_read, ptr);
-        ptr += to_read;
-        remaining -= to_read;
-    }
-
-    reg_write_blk(eth, ERXRDPTL, next);
-    reg_write_blk(eth, ERXRDPTH, next >> 8);
-    reg_bits_set_blk(eth, ECON2, PKTDEC);
-
-    return true;
-}
-
 uint8_t enc28j60_irq_flags(enc28j60 *eth)
 {
     // According to the section 12 of the manual
@@ -410,16 +337,14 @@ void enc28j60_irq_ack(enc28j60 *eth, uint8_t flags)
     enc28j60_cmd_buf_execute(eth);
 }
 
-uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
+static bool tx_buffer_fit(enc28j60 *eth, size_t size)
 {
-    // Section 7.1 of the datasheet
-
     // The read pointer is not in front of us and we cannot fit the frame in the
     // remaining RAM; so we
     if (eth->wptr >= eth->dev_rptr &&
         eth->wptr + size + TX_OVERHEAD_SIZE > RAM_SIZE) {
         if (eth->dev_rptr == eth->cfg->rx_size) {
-            return ENC28J60_INVALID_FRAME_ID;
+            return false;
         }
         eth->wptr = eth->cfg->rx_size;
     }
@@ -428,6 +353,27 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
     // can fit the frame
     if (eth->wptr < eth->dev_rptr &&
         eth->wptr + size + TX_OVERHEAD_SIZE >= eth->dev_rptr) {
+        return false;
+    }
+    return true;
+}
+
+static uint32_t tx_compute_ptrs(enc28j60 *eth, size_t size)
+{
+    uint32_t id = ((uint32_t)eth->wptr) << 16;
+    eth->wptr += size;
+    id |= eth->wptr;
+    eth->wptr += TX_OVERHEAD_SIZE;
+    if (eth->wptr % 2) {
+        ++eth->wptr;
+    }
+    return id;
+}
+
+uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
+{
+    // Section 7.1 of the datasheet
+    if (!tx_buffer_fit(eth, size)) {
         return ENC28J60_INVALID_FRAME_ID;
     }
 
@@ -457,18 +403,44 @@ uint32_t enc28j60_frame_upload(enc28j60 *eth, size_t size, const void *data)
         remaining -= to_write;
     }
 
-    uint32_t id = ((uint32_t)eth->wptr) << 16;
-    eth->wptr += size;
-    id |= eth->wptr;
-    eth->wptr += TX_OVERHEAD_SIZE;
-    if (eth->wptr % 2) {
-        ++eth->wptr;
-    }
-
     // Exec the command buffer
     enc28j60_cmd_buf_execute(eth);
 
-    return id;
+    return tx_compute_ptrs(eth, size);
+}
+
+uint32_t enc28j60_frame_upload_blk(enc28j60 *eth, size_t size, const void *data)
+{
+    // Section 7.1 of the datasheet
+    if (!tx_buffer_fit(eth, size)) {
+        return ENC28J60_INVALID_FRAME_ID;
+    }
+
+    // Register bank 0
+    bank_set_blk(eth, 0);
+
+    // Set the write pointer
+    reg_write_blk(eth, EWRPTL, eth->wptr);
+    reg_write_blk(eth, EWRPTH, eth->wptr >> 8);
+
+    // Set the frame header - transmit according to MACON3
+    static const uint8_t zero = 0;
+    mem_write_blk(eth, 1, &zero);
+
+    // Encode the frame
+    size_t remaining = size;
+    const uint8_t *ptr = data;
+    while (remaining) {
+        size_t to_write = remaining;
+        if (to_write > WBM_MAX) {
+            to_write = WBM_MAX;
+        }
+        mem_write_blk(eth, to_write, ptr);
+        ptr += to_write;
+        remaining -= to_write;
+    }
+
+    return tx_compute_ptrs(eth, size);
 }
 
 #define TX_START(X) (X >> 16)
@@ -492,6 +464,25 @@ void enc28j60_frame_tx(enc28j60 *eth, uint32_t frame_id)
     // Fire things up
     enc28j60_cmd_buf_encode_cmd(eth, BFS_CMD(ECON1, TXRTS), NULL);
     enc28j60_cmd_buf_execute(eth);
+}
+
+void enc28j60_frame_tx_blk(enc28j60 *eth, uint32_t frame_id)
+{
+    // Section 7.1 of the datasheet
+    uint16_t start = TX_START(frame_id);
+    uint16_t end = TX_END(frame_id);
+
+    // Start of the packet
+    bank_set_blk(eth, 0);
+    reg_write_blk(eth, ETXSTL, start);
+    reg_write_blk(eth, ETXSTH, start >> 8);
+
+    // Last byte of the data payload
+    reg_write_blk(eth, ETXNDL, end);
+    reg_write_blk(eth, ETXNDH, end >> 8);
+
+    // Fire things up
+    reg_bits_set_blk(eth, ECON1, TXRTS);
 }
 
 void enc28j60_frame_tx_confirm(enc28j60 *eth, uint32_t frame_id)
@@ -520,6 +511,17 @@ uint32_t enc28j60_frame_rx_info(enc28j60 *eth)
     ret |= ((uint32_t)val);
     enc28j60_cmd_buf_decode_rcr(eth, true, &val);
     ret |= ((uint32_t)val) << 8;
+    return ret;
+}
+
+uint32_t enc28j60_frame_rx_info_blk(enc28j60 *eth)
+{
+    // Read the header - Section 7.2.2 of the datasheet
+    uint32_t ret = 0;
+    uint8_t header[6] = { 0 };
+    mem_read_blk(eth, 6, header);
+    ret = (((uint32_t)header[1]) << 24) | (((uint32_t)header[0]) << 16);
+    ret = (((uint32_t)header[3]) << 8) | header[2];
     return ret;
 }
 
@@ -558,6 +560,38 @@ void enc28j60_frame_rx(enc28j60 *eth, uint32_t rx_info, void *buffer)
     enc28j60_cmd_buf_execute(eth);
 }
 
+void enc28j60_frame_rx_blk(enc28j60 *eth, uint32_t rx_info, void *buffer)
+{
+    uint16_t size = ENC28J60_RX_SIZE(rx_info);
+    uint16_t next_packet = ENC28J60_RX_NEXT(rx_info);
+
+    uint8_t *ptr = buffer;
+    size_t remaining = size;
+    while (remaining) {
+        size_t to_read = remaining;
+        if (to_read > RBM_MAX) {
+            to_read = RBM_MAX;
+        }
+        mem_read_blk(eth, to_read, ptr);
+        ptr += to_read;
+        remaining -= to_read;
+    }
+
+    // Register bank 0
+    bank_set_blk(eth, 0);
+
+    // RX read pointer
+    reg_write_blk(eth, ERXRDPTL, next_packet);
+    reg_write_blk(eth, ERXRDPTH, next_packet >> 8);
+
+    // RBM read pointer
+    reg_write_blk(eth, ERDPTL, next_packet);
+    reg_write_blk(eth, ERDPTH, next_packet >> 8);
+
+    // Decrement the packet counter
+    reg_bits_set_blk(eth, ECON2, PKTDEC);
+}
+
 void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info)
 {
     uint16_t next_packet = ENC28J60_RX_NEXT(rx_info);
@@ -580,6 +614,25 @@ void enc28j60_frame_discard(enc28j60 *eth, uint32_t rx_info)
     enc28j60_cmd_buf_execute(eth);
 }
 
+void enc28j60_frame_discard_blk(enc28j60 *eth, uint32_t rx_info)
+{
+    uint16_t next_packet = ENC28J60_RX_NEXT(rx_info);
+
+    // Register bank 0
+    bank_set_blk(eth, 0);
+
+    // RX read pointer
+    reg_write_blk(eth, ERXRDPTL, next_packet);
+    reg_write_blk(eth, ERXRDPTH, next_packet >> 8);
+
+    // RBM read pointer
+    reg_write_blk(eth, ERDPTL, next_packet);
+    reg_write_blk(eth, ERDPTH, next_packet >> 8);
+
+    // Decrement the packet counter
+    reg_bits_set_blk(eth, ECON2, PKTDEC);
+}
+
 uint8_t enc28j60_rx_count(enc28j60 *eth)
 {
     uint8_t count = 0;
@@ -591,4 +644,11 @@ uint8_t enc28j60_rx_count(enc28j60 *eth)
     enc28j60_cmd_buf_execute(eth);
     enc28j60_cmd_buf_decode_rcr(eth, true, &count);
     return count;
+}
+
+uint8_t enc28j60_rx_count_blk(enc28j60 *eth)
+{
+    // Register bank 1
+    bank_set_blk(eth, 1);
+    return reg_read_e_blk(eth, EPKTCNT);
 }
