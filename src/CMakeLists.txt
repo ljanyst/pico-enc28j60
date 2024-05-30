@@ -20,6 +20,7 @@ target_link_libraries(
   hardware_dma
 )
 
+if(ENABLE_ENC28J60_FREERTOS_DRIVER)
 pico_add_library(pico_enc28j60_freertos_driver)
 
 target_sources(pico_enc28j60_freertos_driver INTERFACE
@@ -36,3 +37,4 @@ target_link_libraries(
   freertos_plus_tcp
   pico_enc28j60_driver
 )
+endif()
