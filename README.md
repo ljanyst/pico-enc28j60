@@ -42,7 +42,7 @@ supply the device directly. The MM74HCT08M AND gate (marked green) used as a
 bufer to raise the voltage of the MOSI and interrupt signals to 5V needs to be
 removed as well because Pico can't tolerate GPIO input voltage this high. The
 connectors for Vin and Vout pins of the voltage regulator need to be shorted
-(marked blue on the picture above) and so do the inputs and outputs of the
+(marked blue on the picture below) and so do the inputs and outputs of the
 AND gates responsible for the MOSI and IRQ signals (marked green).
 
 ![Modified ENC28J60 Adrduino Nano Shield](imgs/enc28j60-nano-moded.webp)
@@ -159,3 +159,9 @@ void setup_network()
     FreeRTOS_IPInit_Multi();
 }
 ```
+
+References
+==========
+
+ * [ENC28J60 Data Sheet](https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/DataSheets/39662e.pdf)
+ * [ENC28J60 Errata](https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/Errata/80349c.pdf)
