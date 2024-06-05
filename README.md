@@ -29,10 +29,13 @@ ENC28J60 Hardware
 -----------------
 
 ENC28J60 is a 3.3V chip and there's a bunch of breakout boards available for it
-that can be used directly with Pico. There's also an Arduino Nano shield
-designed for a 5V operation. Coincidentally, that's the board that has been used
-for the development of this driver, but it needs to be modified before it can
-be used with Pico.
+that can be used directly with Pico.
+
+![ENC28J60 Board](imgs/enc28j60-board.webp)
+
+There's also an Arduino Nano shield designed for a 5V operation. Coincidentally,
+that's the board that has been used for the development of this driver, but it
+needs to be modified before it can be used with Pico.
 
 ![ENC28J60 Adrduino Nano Shield](imgs/enc28j60-nano.webp)
 
