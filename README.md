@@ -112,6 +112,22 @@ has been raised. `data` is passed to both functions when they are called.
 FreeRTOS setup
 --------------
 
+When using the FreeRTOS driver, especially in a multicore setup, it is important
+to ensure the consistency of heap operations. Consider adding
+`PICO_USE_MALLOC_MUTEX` to your global defines:
+
+```cmake
+add_definitions(
+  -DPICO_USE_MALLOC_MUTEX
+)
+```
+
+and configuring the FreeRTOS-Pico sync interop in your `FreeRTOSConfig.h`:
+
+```c
+#define configSUPPORT_PICO_SYNC_INTEROP 1
+```
+
 The FreeRTOS driver is normally initialized the following way assuming that most
 of the driver configuration options are left at their defaults:
 
