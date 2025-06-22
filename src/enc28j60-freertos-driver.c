@@ -34,7 +34,7 @@ static void __time_critical_func(irq_handler)(void *data)
     xTaskNotifyIndexedFromISR(dd->task, 0, IRQ_NOTIFICATION, eSetBits, NULL);
 }
 
-static NetworkBufferDescriptor_t *select(driver_data *dd, bool want_frame)
+static NetworkBufferDescriptor_t *select_frame(driver_data *dd, bool want_frame)
 {
     // Check if we can return a frame right away
     if (want_frame) {
@@ -118,7 +118,7 @@ static void driver_task(void *params)
     while (1) {
         bool rx_ready = false;
         NetworkBufferDescriptor_t *tx_frame_new = NULL;
-        tx_frame_new = select(dd, tx_frame == NULL && dd->link_up);
+        tx_frame_new = select_frame(dd, tx_frame == NULL && dd->link_up);
 
         // If we didn't get a frame here, we were woken up because of an IRQ
         if (!tx_frame_new) {
