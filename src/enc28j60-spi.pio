@@ -30,6 +30,7 @@
 ; related to manipulating the output pins. Appropriate waits are introduced
 ; manually to achieve a stable clock.
 
+.pio_version 0
 .program enc28j60_spi
 .side_set 2 opt
 
